@@ -2,9 +2,9 @@ import agtermCore
 import AppKit
 
 /// `WorkspaceSidebar.Coordinator` row rendering — the `NSOutlineViewDelegate` cell/row builders and their
-/// helpers, split out to keep `WorkspaceSidebar.swift` under the swiftlint size limit. The lazy icon caches
-/// and `rowIcon`/`rowLabel(for:workspaceName:)` stay in the main file (lazy stored properties can't live in
-/// an extension, and those two are shared with the reconcile path).
+/// helpers, split out to keep `WorkspaceSidebar.swift` under the swiftlint size limit. The icon cache
+/// and `rowIcon`/`rowLabel(for:workspaceName:)` stay in the main file (stored properties can't live in
+/// an extension, and `rowLabel` is shared with the reconcile path).
 extension WorkspaceSidebar.Coordinator {
     // MARK: - NSOutlineViewDelegate
 
@@ -53,11 +53,7 @@ extension WorkspaceSidebar.Coordinator {
             // roll-up badge so an unseen notification stays visible when the workspace is collapsed
             // (gated by the Settings badge toggle, like the session badge below)
             applyBadge(toCell: cell, count: effectiveUnseen(workspace.map(displayedUnseen(for:)) ?? 0))
-            // a workspace in the focus set draws the SAME grid glyph at BLACK weight, keyed on MEMBERSHIP
-            // alone and NOT on `focusEnabled` — so the marked set stays legible with the filter off, while
-            // looking at the whole tree.
-            cell.imageView?.image = store.focusedWorkspaceIDs.contains(node.id) ? focusedWorkspaceIcon : workspaceIcon
-            cell.imageView?.toolTip = nil
+            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(ofWorkspace: node.id, in: store))
             cell.imageView?.setAccessibilityIdentifier("workspace-icon")
         case .session:
             field.stringValue = rowLabel(forSession: node.id)
@@ -67,17 +63,7 @@ extension WorkspaceSidebar.Coordinator {
             let session = store.session(withID: node.id)
             applyBadge(toCell: cell, count: effectiveUnseen(session?.unseenCount ?? 0))
             cell.statusIcon.apply(effectiveIndicator(forSession: node.id))
-            // the split-rectangle icon (matching the toolbar split button) shows in BOTH modes so a split
-            // stays distinguishable at a glance, and `hasSplit` keeps it while merely hidden. Only the
-            // filled `flagged` variant is tree-mode only — every row in the flat flagged view is flagged,
-            // so the fill would be noise.
-            let showSplitIcon = session?.hasSplit == true
-            let flagged = store.sidebarMode == .tree && session?.flagged == true
-            let notice = session.flatMap(presentationNotice(for:))
-            cell.imageView?.image = iconForSession(split: showSplitIcon, axis: session?.splitAxis ?? .leftRight,
-                                                   flagged: flagged, remote: session?.remoteHost != nil,
-                                                   disconnected: notice != nil)
-            cell.imageView?.toolTip = notice
+            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(ofSession: node.id, in: store))
             cell.imageView?.setAccessibilityIdentifier("session-icon")
         }
         // text/icon colors track the terminal theme; a selected row uses the selection foreground.
@@ -90,41 +76,11 @@ extension WorkspaceSidebar.Coordinator {
         return cell
     }
 
-    /// The notice a remote row shows while its presentation stream is not up, nil otherwise.
-    func presentationNotice(for session: Session) -> String? {
-        guard let host = session.remoteHost else { return nil }
-        return session.remotePresentation?.connection.rowNotice(host: host)
-    }
-
     /// Shows the unseen-notification `count` capsule on the row (hidden, zero-width when 0, so the
     /// name reclaims the space). The `notify-badge` accessibility hook lives on `BadgeView`.
     private func applyBadge(toCell cell: SidebarCellView, count: Int) {
         cell.badge.isHidden = count == 0
         cell.badge.count = count
-    }
-
-    /// The leading session-row icon: split-rectangle when split, else plain terminal, each swapped to its
-    /// filled variant when `flagged` — tree mode only, the flat flagged view passes `flagged: false`.
-    ///
-    /// A remote row takes its own glyph and keeps the split bit, not the flagged fill: a HIDDEN split is
-    /// state nothing else reveals, while the fill is tree-mode decoration the flat flagged view already
-    /// passes `flagged: false` for. It marks that split by WEIGHT, as the focused-workspace icon does,
-    /// because `.fill` is what every other row icon spends on FLAGGED, so a filled cloud would read as a
-    /// flag. The axis is not distinguished — no cloud symbol carries both arrangements.
-    ///
-    /// A remote row whose presentation stream is down swaps the cloud for its slashed form.
-    private func iconForSession(split: Bool, axis: SplitAxis, flagged: Bool, remote: Bool,
-                                disconnected: Bool) -> NSImage? {
-        if remote, disconnected { return split ? remoteDisconnectedSplitSessionIcon : remoteDisconnectedSessionIcon }
-        if remote { return split ? remoteSplitSessionIcon : remoteSessionIcon }
-        switch (split, axis, flagged) {
-        case (true, .topBottom, true): return flaggedHorizontalSplitSessionIcon
-        case (true, .topBottom, false): return horizontalSplitSessionIcon
-        case (true, .leftRight, true): return flaggedSplitSessionIcon
-        case (true, .leftRight, false): return splitSessionIcon
-        case (false, _, true): return flaggedSessionIcon
-        case (false, _, false): return sessionIcon
-        }
     }
 
     /// Builds a view-based outline cell: a `SidebarCellView` with a leading icon (`cell.imageView`), the

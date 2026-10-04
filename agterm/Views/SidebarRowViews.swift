@@ -11,8 +11,8 @@ final class AddSessionButton: NSButton {
 }
 
 /// An `NSTableCellView` with a leading icon, the name field, and a trailing badge. The icon is the inherited
-/// `cell.imageView` (2x2 grid for a workspace, outlined terminal for a session), so AppKit re-tints it white on
-/// a selected row; the name is `cell.textField`, which the rename and selection wiring drives.
+/// `cell.imageView` (the row's position glyph, `SidebarNumbering`), so AppKit re-tints it white on a selected
+/// row; the name is `cell.textField`, which the rename and selection wiring drives.
 final class SidebarCellView: NSTableCellView {
     /// Trailing unseen-notification count — a session's `unseenCount` or a collapsed workspace's roll-up; 0 hides.
     let badge = BadgeView()

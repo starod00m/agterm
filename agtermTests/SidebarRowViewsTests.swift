@@ -102,38 +102,34 @@ final class SidebarRowViewsTests: XCTestCase {
         XCTAssertNil(field.toolTip, "dragging the divider wider must re-evaluate, or a stale tooltip lingers")
     }
 
-    func testARemoteSessionRowGetsItsOwnIcon() throws {
+    func testRowsShowTheirVisiblePositionGlyph() throws {
         let store = try XCTUnwrap(library.activeStore)
-        let local = try XCTUnwrap(store.activeSession)
-        let remote = try XCTUnwrap(store.addSession(toWorkspace: store.workspaces[0].id, cwd: "/a", remoteHost: "buildbox"))
+        let first = store.workspaces[0]
+        let firstSession = try XCTUnwrap(first.sessions.first)
+        let second = store.addWorkspace(name: "second")
+        let sessions = try (0..<3).map { _ in try XCTUnwrap(store.addSession(toWorkspace: second.id, cwd: "/a")) }
         buildSidebar(for: store)
 
-        let remoteIcon = try renderedIcon(forSession: remote.id)
-        let localIcon = try renderedIcon(forSession: local.id)
-
-        XCTAssertEqual(remoteIcon, coordinator.remoteSessionIcon)
-        XCTAssertNotEqual(remoteIcon, localIcon, "a teleported row must be tellable from a local one at a glance")
+        XCTAssertEqual(try renderedIcon(forRow: first.id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: second.id), coordinator.rowIcon(forPosition: 2))
+        XCTAssertEqual(try renderedIcon(forRow: firstSession.id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: sessions[0].id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: sessions[2].id), coordinator.rowIcon(forPosition: 3))
     }
 
-    func testARemoteRowStillShowsAHiddenSplit() throws {
+    func testClosingASessionRenumbersTheRowsBelowIt() throws {
         let store = try XCTUnwrap(library.activeStore)
-        let remote = try XCTUnwrap(store.addSession(toWorkspace: store.workspaces[0].id, cwd: "/a", remoteHost: "buildbox"))
-        store.toggleSplit(remote.id)
-        store.toggleSplit(remote.id)
+        let workspace = store.workspaces[0]
+        let added = try (0..<2).map { _ in try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a")) }
+        let closed = try XCTUnwrap(workspace.sessions.first)
         buildSidebar(for: store)
+        XCTAssertEqual(try renderedIcon(forRow: added[1].id), coordinator.rowIcon(forPosition: 3))
 
-        XCTAssertTrue(remote.hasSplit, "the pane is alive but hidden; the row is the only place this shows")
-        XCTAssertEqual(try renderedIcon(forSession: remote.id), coordinator.remoteSplitSessionIcon)
-    }
+        store.closeSession(closed.id)
+        coordinator.reconcile()
 
-    func testAFlaggedRemoteRowKeepsTheUnsplitWeight() throws {
-        let store = try XCTUnwrap(library.activeStore)
-        let remote = try XCTUnwrap(store.addSession(toWorkspace: store.workspaces[0].id, cwd: "/a", remoteHost: "buildbox"))
-        remote.flagged = true
-        buildSidebar(for: store)
-
-        XCTAssertEqual(try renderedIcon(forSession: remote.id), coordinator.remoteSessionIcon,
-                       "on a remote row the weight carries split, so flagging must not claim it")
+        XCTAssertEqual(try renderedIcon(forRow: added[0].id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: added[1].id), coordinator.rowIcon(forPosition: 2))
     }
 
     func testFlaggedRenameRestoresTheLabelAfterAnUnchangedCustomName() async throws {
@@ -293,12 +289,10 @@ final class SidebarRowViewsTests: XCTestCase {
         return try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
     }
 
-    private func renderedIcon(forSession id: UUID) throws -> NSImage? {
+    private func renderedIcon(forRow id: UUID) throws -> NSImage? {
         outline.layoutSubtreeIfNeeded()
-        let row = try XCTUnwrap((0..<outline.numberOfRows).first { index in
-            guard let node = outline.item(atRow: index) as? SidebarNode else { return false }
-            return node.kind == .session && node.id == id
-        }, "the session row should be visible in the outline")
+        let row = try XCTUnwrap((0..<outline.numberOfRows).first { (outline.item(atRow: $0) as? SidebarNode)?.id == id },
+                                "the row should be visible in the outline")
         let cell = try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
         return cell.imageView?.image
     }

@@ -159,16 +159,6 @@ final class WindowContentViewTitlebarTests: XCTestCase {
         attach(moved, name: "workspace-compact-640")
     }
 
-    func testRemoteCloudSplitWeightRemainsVisibleAtSidebarSize() throws {
-        let store = try XCTUnwrap(library.activeStore)
-        let coordinator = WorkspaceSidebar.Coordinator(store: store, actions: AppActions(library: library))
-        let regular = try renderCloud(XCTUnwrap(coordinator.remoteSessionIcon))
-        let bold = try renderCloud(XCTUnwrap(coordinator.remoteSplitSessionIcon))
-        XCTAssertGreaterThan(differentPixels(regular, bold, from: 0, to: 16), 15)
-        attach(regular, name: "remote-cloud-sidebar-regular")
-        attach(bold, name: "remote-cloud-sidebar-bold")
-    }
-
     private func renderTitlebar(mode: ToolbarMode, width: Double,
                                 hidden: Set<InterfaceElement> = []) throws -> NSBitmapImageRep {
         let store = try XCTUnwrap(library.activeStore)
@@ -193,14 +183,6 @@ final class WindowContentViewTitlebarTests: XCTestCase {
         let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         return bitmap
-    }
-
-    private func renderCloud(_ image: NSImage) throws -> NSBitmapImageRep {
-        let view = Image(nsImage: image).frame(width: 16, height: 16).foregroundStyle(.black).background(.white)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 1
-        let rendered = try XCTUnwrap(renderer.nsImage)
-        return try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(rendered.tiffRepresentation)))
     }
 
     private func differentPixels(_ first: NSBitmapImageRep, _ second: NSBitmapImageRep,
