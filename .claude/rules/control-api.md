@@ -1473,7 +1473,7 @@ side, and reads `lastAppliedIsDark` when bare. Refuse it outside XCUITest; provi
   helper does when the ssh terminal goes. On the viewer a held surface closes at once and a running one
   keeps its program and closes when its ssh ends, held or not. A session leaving either store, soft close
   included, ends all of this before it goes, so undo brings back neither a reservation nor a replica.
-- A row whose stream is not up says so on its sidebar indicator, naming the host. Retrying is automatic;
+- No GUI surface shows a stream that is not up; `presentation.state` is the read-back. Retrying is automatic;
   closing and reattaching the session is the manual way to retry now.
 - The origin bounds each stream: 256 KiB a line checked before delivery, a bounded outbound queue whose
   overflow closes the subscriber, a hello deadline, and a drop when the source session leaves.

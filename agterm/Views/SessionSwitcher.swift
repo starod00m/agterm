@@ -239,7 +239,7 @@ struct SessionSwitcherRow: View {
     var status: AgentStatus?
     var statusColorHex: String?
     var statusShape: StatusShape?
-    /// Leads the title with the sidebar's cloud glyph, for a session attached from another Mac.
+    /// Leads the title with a `cloud`, as the title bar does, for a session attached from another Mac.
     var remote = false
 
     /// Read from the non-observable `GhosttyApp` — both the Ctrl-Tab overlay and the popovers mount fresh
