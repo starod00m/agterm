@@ -58,9 +58,9 @@ public enum RemotePresentationConnection: Equatable, Sendable {
     case unsupported
     case failed(String)
 
-    /// What a remote session tells the user while its stream is not up, nil when there is nothing to say. Read
-    /// from the state itself, so the notice clears the moment the stream is back. An origin too old for the
-    /// stream gets none: nothing the user does here changes it.
+    /// Text for a caller to show while the stream is not up, nil when there is nothing to say. Read from the
+    /// state itself, so the notice clears the moment the stream is back. An origin too old for the stream gets
+    /// none: nothing the user does here changes it.
     public func rowNotice(host: String) -> String? {
         switch self {
         case .connected, .unsupported: return nil

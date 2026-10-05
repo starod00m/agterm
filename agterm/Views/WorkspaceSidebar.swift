@@ -374,9 +374,10 @@ struct WorkspaceSidebar: NSViewRepresentable {
             /// The glyph's flag fill, from the same predicate the cell builder draws with. Always false for
             /// workspace rows.
             let flagged: Bool
-            /// Whether the workspace, or a session's owning workspace, is in the focus set. MEMBERSHIP only,
-            /// independent of `focusEnabled`, so marking re-renders just those rows' glyphs even while the
-            /// filter is off (with it on the shape changes too and the rebuild branch takes over).
+            /// The glyph's focus brightness for the workspace, or a session's owning workspace, from the same
+            /// predicate the cell builder draws with, so false in flagged modes. MEMBERSHIP only, independent of
+            /// `focusEnabled`, so marking re-renders just those rows' glyphs even while the filter is off (with it
+            /// on the shape changes too and the rebuild branch takes over).
             let focusMember: Bool
 
             func differsOnlyInLabel(from other: RowContent) -> Bool {
