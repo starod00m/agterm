@@ -24,14 +24,16 @@ paths:
   reads that frame. `SidebarRowIndentTests` splits by version: the tight-gap cases run on 27 and up, the
   indent and trailing-edge cases everywhere, and `testBelowTheGateFramesMatchAPlainOutline` only below the
   gate, where it is the only thing pinning earlier layouts as untouched. Do not re-gate or drop it.
-- The leading row glyph names the key that selects the row: `SidebarNumbering` gives its 1-based visible
-  position, workspaces over `AppStore.workspaceProjection` and sessions from 1 inside their row, or down the
-  whole flat flagged list, as `N.circle`, `0.circle` for the tenth, and the keyless `circle.dashed` past ten.
-  Split, remote and disconnected have no row icon. Only in the ordinary tree, a flagged session fills its
-  circle (`N.circle.fill`) and a focus-set workspace and its sessions draw at full alpha, filter on or off;
-  the stub stays at 0.4 and unfilled. Flagged modes show neither: every row there is flagged.
+- The leading row glyph names the digit key that selects the row, so `SidebarNumbering` counts rows exactly
+  as drawn; under the flagged tree a session counts only among its workspace's flagged sessions.
   Positions follow the order `TreeShape` carries, so a renumber always takes the rebuild branch and
-  `RowContent` holds no glyph; a flag or membership change reloads its rows through `RowContent` instead.
+  `RowContent` holds no position.
+- The flag fill and focus brightness show only in the ordinary tree: in flagged modes every row is flagged,
+  and those modes ignore focus. `RowContent` and the cell builder read the same `SidebarNumbering`
+  predicates; a condition added to one copy only would leave the glyph stale after a flag or focus change.
+- The glyph's size follows `sidebarFontSize`. It does not show the row kind: split, remote and disconnected
+  rows draw a number like any other. A remote session shows as a `cloud` beside its host in the title bar
+  (`InterfaceElement.remoteHost`) and in the session switcher.
 
 ## Drag and row actions
 
@@ -186,11 +188,12 @@ paths:
 
 ## Reconciliation and expansion
 
-- `TreeShape` reflects the `workspaceProjection` rows wherever workspace rows render, and one stable
+- `TreeShape` reflects the `AppStore.workspaceProjection` rows wherever workspace rows render, and one stable
   `flaggedShapeID` group under the flat flagged list. Mode and effective-layout changes always rebuild; the
   effective layout is nil under the ordinary tree, so a setting change there rebuilds nothing.
-  Observation must read mode, both focus fields, and every session flag: membership reloads its row; enabled
-  state reshapes the tree. The layout is not observable and arrives on `.agtermAppearanceChanged`.
+  Observation must read mode, both focus fields, and every session flag: membership reloads the workspace row
+  and all its session rows; enabled state reshapes the tree.
+  The layout is not observable and arrives on `.agtermAppearanceChanged`.
 - `rebuildAndReload` records what it rendered (`lastMode`, `lastFlaggedLayout`, `lastShape`, the row-content
   snapshot) itself, not `reconcile`: the mount builds directly, and an unrecorded first build makes the next
   reconcile rebuild for a change that never happened.
