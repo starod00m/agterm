@@ -57,6 +57,30 @@ struct SidebarNumberingTests {
         #expect(symbols[11] == "circle.dashed")
     }
 
+    @Test func theTenthWorkspaceDrawsZeroAndTheEleventhTheStub() {
+        let store = makeStore()
+        let workspaces = (1 ... 11).map { store.addWorkspace(name: "ws\($0)") }
+
+        let positions = workspaces.map { SidebarNumbering.position(ofWorkspace: $0.id, in: store, flaggedLayout: .flat) }
+        #expect(positions == Array(1 ... 11))
+        #expect(positions.suffix(2).map { SidebarNumbering.symbolName(forPosition: $0) } == ["0.circle", "circle.dashed"])
+    }
+
+    @Test func aFocusFilterOfElevenMembersNumbersThemPastTheHiddenRows() {
+        let store = makeStore()
+        var members: [Workspace] = []
+        for index in 1 ... 11 {
+            store.addWorkspace(name: "hidden\(index)")
+            members.append(store.addWorkspace(name: "member\(index)"))
+        }
+        for member in members { store.setFocusMembership(member.id, member: true) }
+        store.setFocusEnabled(true)
+
+        let positions = members.map { SidebarNumbering.position(ofWorkspace: $0.id, in: store, flaggedLayout: .flat) }
+        #expect(positions == Array(1 ... 11))
+        #expect(positions.suffix(2).map { SidebarNumbering.symbolName(forPosition: $0) } == ["0.circle", "circle.dashed"])
+    }
+
     @Test func flaggedTreeNumbersOnlyFlaggedRowsAndIgnoresTheFocusFilter() throws {
         let store = makeStore()
         let first = store.addWorkspace(name: "first")
@@ -114,8 +138,8 @@ struct SidebarNumberingTests {
 
         for enabled in [false, true] {
             store.setFocusEnabled(enabled)
-            #expect(SidebarNumbering.showsFlag(ofSession: flagged.id, in: store))
-            #expect(!SidebarNumbering.showsFlag(ofSession: plain.id, in: store))
+            #expect(SidebarNumbering.showsFlag(of: flagged, in: store))
+            #expect(!SidebarNumbering.showsFlag(of: plain, in: store))
             #expect(SidebarNumbering.isFocusMember(workspace: marked.id, in: store))
             #expect(SidebarNumbering.isFocusMember(session: flagged.id, in: store))
             #expect(!SidebarNumbering.isFocusMember(workspace: other.id, in: store))
@@ -131,7 +155,7 @@ struct SidebarNumberingTests {
         store.setFocusMembership(marked.id, member: true)
         store.setSidebarMode(.flagged)
 
-        #expect(!SidebarNumbering.showsFlag(ofSession: flagged.id, in: store))
+        #expect(!SidebarNumbering.showsFlag(of: flagged, in: store))
         #expect(!SidebarNumbering.isFocusMember(workspace: marked.id, in: store))
         #expect(!SidebarNumbering.isFocusMember(session: flagged.id, in: store))
     }

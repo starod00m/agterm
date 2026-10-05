@@ -186,8 +186,8 @@ struct WorkspaceSidebar: NSViewRepresentable {
         static let workspaceIDUserInfoKey = "agterm.workspaceID"
         static let expandedUserInfoKey = "agterm.expanded"
 
-        /// Last-seen visible content (label, badge, status) per session and workspace id, so a
-        /// reconcile reloads only the rows whose content changed. An absent key ≠ any real content.
+        /// Last-seen visible content (label, badge, status, flag, focus membership) per session and workspace
+        /// id, so a reconcile reloads only the rows whose content changed. An absent key ≠ any real content.
         private var lastRowContent: [UUID: RowContent] = [:]
 
         /// The sidebar font size last applied (row height + row fonts). `.agtermAppearanceChanged` fires for
@@ -364,15 +364,15 @@ struct WorkspaceSidebar: NSViewRepresentable {
         }
 
         /// A row's visible content: label (workspace name or session `displayName`), the gated unseen-badge
-        /// count and the agent-status indicator. A delta reloads just that row, except a session's label
-        /// alone, which its live cell takes in place. The position glyph is not here: positions follow the
-        /// order `TreeShape` carries, so any change to one takes the rebuild branch.
+        /// count, the agent-status indicator, and the glyph's flag fill and focus brightness. A delta reloads
+        /// just that row, except a session's label alone, which its live cell takes in place. The position is
+        /// not here: positions follow the order `TreeShape` carries, so any change to one takes the rebuild branch.
         private struct RowContent: Equatable {
             var label: String
             let unseen: Int
             let indicator: AgentIndicator
-            /// Whether the session is flagged. A change re-renders just this row via `reloadItem`. Always
-            /// false for workspace rows.
+            /// The glyph's flag fill, from the same predicate the cell builder draws with. Always false for
+            /// workspace rows.
             let flagged: Bool
             /// Whether the workspace, or a session's owning workspace, is in the focus set. MEMBERSHIP only,
             /// independent of `focusEnabled`, so marking re-renders just those rows' glyphs even while the
@@ -401,8 +401,8 @@ struct WorkspaceSidebar: NSViewRepresentable {
         }
 
         /// Decides between a full rebuild (a SHAPE change: add/move/close/reorder) and a targeted per-row
-        /// update (a content change: rename, cwd-driven name, badge, status). A row update during
-        /// an in-progress rename is skipped so a tick can't drop the edit.
+        /// update (a content change: rename, cwd-driven name, badge, status, flag, focus membership). A row
+        /// update during an in-progress rename is skipped so a tick can't drop the edit.
         func reconcile() {
             // a mode or layout flip swaps the whole data source, so rebuild regardless of the shape diff.
             if store.sidebarMode != lastMode || flaggedLayout != lastFlaggedLayout || currentShape() != lastShape {
@@ -479,7 +479,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
             RowContent(label: workspace.name,
                        unseen: effectiveUnseen(displayedUnseen(for: workspace)),
                        indicator: AgentIndicator(), flagged: false,
-                       focusMember: store.focusedWorkspaceIDs.contains(workspace.id))
+                       focusMember: SidebarNumbering.isFocusMember(workspace: workspace.id, in: store))
         }
 
         /// The visible content of a session row. One builder shared by `reloadChangedContentRows` and
@@ -489,7 +489,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
         private func rowContent(forSession session: Session, workspaceName: String, focusMember: Bool) -> RowContent {
             RowContent(label: rowLabel(for: session, workspaceName: workspaceName),
                        unseen: effectiveUnseen(session.unseenCount),
-                       indicator: session.agentIndicator, flagged: session.flagged,
+                       indicator: session.agentIndicator, flagged: SidebarNumbering.showsFlag(of: session, in: store),
                        focusMember: focusMember)
         }
 

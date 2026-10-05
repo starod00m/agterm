@@ -67,7 +67,7 @@ extension WorkspaceSidebar.Coordinator {
             cell.statusIcon.apply(effectiveIndicator(forSession: node.id))
             applyGlyph(toCell: cell, position: SidebarNumbering.position(
                 ofSession: node.id, in: store, flaggedLayout: GhosttyApp.shared.flaggedViewLayout),
-                flagged: SidebarNumbering.showsFlag(ofSession: node.id, in: store),
+                flagged: session.map { SidebarNumbering.showsFlag(of: $0, in: store) } ?? false,
                 focus: SidebarNumbering.isFocusMember(session: node.id, in: store))
             cell.imageView?.setAccessibilityIdentifier("session-icon")
         }
@@ -81,7 +81,7 @@ extension WorkspaceSidebar.Coordinator {
         return cell
     }
 
-    /// The glyph's shape, size and brightness state; the tint itself follows from the builder's `setColors`.
+    /// The tint is not set here: it follows from the builder's `setColors`.
     private func applyGlyph(toCell cell: SidebarCellView, position: Int?, flagged: Bool, focus: Bool) {
         let side = AppSettings.sidebarRowGlyphSide(fontSize: Double(GhosttyApp.shared.sidebarFontSize))
         for constraint in cell.glyphSideConstraints { constraint.constant = side }

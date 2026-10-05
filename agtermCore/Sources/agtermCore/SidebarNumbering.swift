@@ -17,9 +17,10 @@ public enum SidebarNumbering {
     }
 
     /// Flagged modes show only flagged rows, so a fill there would mark every row: only the ordinary tree shows it.
+    /// Takes the resolved session: the reconcile loop already holds it, and a lookup per row would make it quadratic.
     @MainActor
-    public static func showsFlag(ofSession id: UUID, in store: AppStore) -> Bool {
-        store.sidebarMode == .tree && store.session(withID: id)?.flagged == true
+    public static func showsFlag(of session: Session, in store: AppStore) -> Bool {
+        store.sidebarMode == .tree && session.flagged
     }
 
     /// Membership, not the filter: a marked workspace and its sessions stay bright with the filter off.
