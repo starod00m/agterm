@@ -161,6 +161,7 @@ final class SidebarRowViewsTests: XCTestCase {
             XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
         }
         XCTAssertEqual(try renderedIcon(forRow: sibling.id), coordinator.rowIcon(forPosition: 2, flagged: true))
+        XCTAssertEqual(try renderedIcon(forRow: selected.id), coordinator.rowIcon(forPosition: 1))
 
         store.setFocusMembership(marked.id, member: false)
         coordinator.reconcile()
