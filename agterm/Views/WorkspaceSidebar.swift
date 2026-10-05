@@ -374,9 +374,9 @@ struct WorkspaceSidebar: NSViewRepresentable {
             /// Whether the session is flagged. A change re-renders just this row via `reloadItem`. Always
             /// false for workspace rows.
             let flagged: Bool
-            /// Whether the workspace is in the focus set. MEMBERSHIP only, independent of `focusEnabled`, so
-            /// marking re-renders just that row even while the filter is off (with it on the shape changes
-            /// too and the rebuild branch takes over). False for sessions.
+            /// Whether the workspace, or a session's owning workspace, is in the focus set. MEMBERSHIP only,
+            /// independent of `focusEnabled`, so marking re-renders just those rows' glyphs even while the
+            /// filter is off (with it on the shape changes too and the rebuild branch takes over).
             let focusMember: Bool
 
             func differsOnlyInLabel(from other: RowContent) -> Bool {
@@ -438,9 +438,11 @@ struct WorkspaceSidebar: NSViewRepresentable {
                 outline.reloadItem(node)
             }
             for workspace in store.workspaces {
-                reloadIfChanged(workspace.id, rowContent(forWorkspace: workspace))
+                let content = rowContent(forWorkspace: workspace)
+                reloadIfChanged(workspace.id, content)
                 for session in workspace.sessions {
-                    reloadIfChanged(session.id, rowContent(forSession: session, workspaceName: workspace.name))
+                    reloadIfChanged(session.id, rowContent(forSession: session, workspaceName: workspace.name,
+                                                           focusMember: content.focusMember))
                 }
             }
         }
@@ -461,9 +463,11 @@ struct WorkspaceSidebar: NSViewRepresentable {
         private func snapshotRowContent() {
             var snapshot: [UUID: RowContent] = [:]
             for workspace in store.workspaces {
-                snapshot[workspace.id] = rowContent(forWorkspace: workspace)
+                let content = rowContent(forWorkspace: workspace)
+                snapshot[workspace.id] = content
                 for session in workspace.sessions {
-                    snapshot[session.id] = rowContent(forSession: session, workspaceName: workspace.name)
+                    snapshot[session.id] = rowContent(forSession: session, workspaceName: workspace.name,
+                                                      focusMember: content.focusMember)
                 }
             }
             lastRowContent = snapshot
@@ -480,12 +484,13 @@ struct WorkspaceSidebar: NSViewRepresentable {
 
         /// The visible content of a session row. One builder shared by `reloadChangedContentRows` and
         /// `snapshotRowContent` so the snapshot and the diff can't drift. Both callers pass the owning
-        /// `workspaceName` in, so the label needs no per-session lookup and the reconcile stays linear.
-        private func rowContent(forSession session: Session, workspaceName: String) -> RowContent {
+        /// `workspaceName` and its `focusMember` in, so neither needs a per-session lookup and the reconcile
+        /// stays linear.
+        private func rowContent(forSession session: Session, workspaceName: String, focusMember: Bool) -> RowContent {
             RowContent(label: rowLabel(for: session, workspaceName: workspaceName),
                        unseen: effectiveUnseen(session.unseenCount),
                        indicator: session.agentIndicator, flagged: session.flagged,
-                       focusMember: false)
+                       focusMember: focusMember)
         }
 
         /// Rebuilds `roots` from the store, reusing cached node instances by id so NSOutlineView item
@@ -779,8 +784,8 @@ struct WorkspaceSidebar: NSViewRepresentable {
         /// Leading row glyphs (`SidebarNumbering` symbols) as monochrome templates `setColors` tints, by name.
         private var rowIcons: [String: NSImage] = [:]
 
-        func rowIcon(forPosition position: Int?) -> NSImage? {
-            let name = SidebarNumbering.symbolName(forPosition: position)
+        func rowIcon(forPosition position: Int?, flagged: Bool = false) -> NSImage? {
+            let name = SidebarNumbering.symbolName(forPosition: position, flagged: flagged)
             if let cached = rowIcons[name] { return cached }
             let image = Self.rowIcon(name)
             rowIcons[name] = image

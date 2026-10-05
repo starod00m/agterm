@@ -132,6 +132,67 @@ final class SidebarRowViewsTests: XCTestCase {
         XCTAssertEqual(try renderedIcon(forRow: added[1].id), coordinator.rowIcon(forPosition: 2))
     }
 
+    func testMarkingAWorkspaceBrightensItAndItsSessionsWithTheFilterOff() throws {
+        let store = try XCTUnwrap(library.activeStore)
+        let marked = store.workspaces[0]
+        let selected = try XCTUnwrap(marked.sessions.first)
+        let sibling = try XCTUnwrap(store.addSession(toWorkspace: marked.id, cwd: "/a", select: false))
+        let other = store.addWorkspace(name: "other")
+        let outside = try XCTUnwrap(store.addSession(toWorkspace: other.id, cwd: "/a", select: false))
+        store.selectSession(selected.id)
+        buildSidebar(for: store)
+        coordinator.syncSelection()
+
+        XCTAssertEqual(try glyphAlpha(forRow: selected.id), 0.85, accuracy: 0.001)
+        for id in [marked.id, sibling.id, other.id, outside.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
+        }
+
+        store.setFocusMembership(marked.id, member: true)
+        XCTAssertFalse(store.focusEnabled)
+        coordinator.reconcile()
+        coordinator.refreshSelectionAppearance()
+
+        for id in [marked.id, selected.id, sibling.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 1, accuracy: 0.001)
+        }
+        for id in [other.id, outside.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
+        }
+    }
+
+    func testAFlagFillsTheGlyphAndUnflaggingRestoresTheOutline() throws {
+        let store = try XCTUnwrap(library.activeStore)
+        let workspace = store.workspaces[0]
+        let session = try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a"))
+        buildSidebar(for: store)
+
+        store.setFlag(true, forSession: session.id)
+        coordinator.reconcile()
+        XCTAssertEqual(try renderedIcon(forRow: session.id), coordinator.rowIcon(forPosition: 2, flagged: true))
+        XCTAssertEqual(try renderedIcon(forRow: workspace.id), coordinator.rowIcon(forPosition: 1))
+
+        store.setFlag(false, forSession: session.id)
+        coordinator.reconcile()
+        XCTAssertEqual(try renderedIcon(forRow: session.id), coordinator.rowIcon(forPosition: 2))
+    }
+
+    func testTheStubStaysDimWhenFlaggedMarkedAndSelected() throws {
+        let store = try XCTUnwrap(library.activeStore)
+        let workspace = store.workspaces[0]
+        let added = try (0..<10).map { _ in try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a", select: false)) }
+        let eleventh = try XCTUnwrap(added.last)
+        store.setFlag(true, forSession: eleventh.id)
+        store.setFocusMembership(workspace.id, member: true)
+        store.selectSession(eleventh.id)
+        buildSidebar(for: store)
+        coordinator.syncSelection()
+        coordinator.refreshSelectionAppearance()
+
+        XCTAssertEqual(try renderedIcon(forRow: eleventh.id), coordinator.rowIcon(forPosition: nil))
+        XCTAssertEqual(try glyphAlpha(forRow: eleventh.id), 0.4, accuracy: 0.001)
+    }
+
     func testFlaggedRenameRestoresTheLabelAfterAnUnchangedCustomName() async throws {
         try await checkFlaggedRename(customName: "api", edited: "api", expected: "api")
     }
@@ -290,10 +351,17 @@ final class SidebarRowViewsTests: XCTestCase {
     }
 
     private func renderedIcon(forRow id: UUID) throws -> NSImage? {
+        try renderedRowCell(forRow: id).imageView?.image
+    }
+
+    private func glyphAlpha(forRow id: UUID) throws -> CGFloat {
+        try XCTUnwrap(renderedRowCell(forRow: id).imageView?.contentTintColor).alphaComponent
+    }
+
+    private func renderedRowCell(forRow id: UUID) throws -> SidebarCellView {
         outline.layoutSubtreeIfNeeded()
         let row = try XCTUnwrap((0..<outline.numberOfRows).first { (outline.item(atRow: $0) as? SidebarNode)?.id == id },
                                 "the row should be visible in the outline")
-        let cell = try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
-        return cell.imageView?.image
+        return try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
     }
 }

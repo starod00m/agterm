@@ -4,10 +4,35 @@ import Foundation
 /// workspaces over `AppStore.workspaceProjection`, sessions from 1 among that row's sessions, or down the whole list
 /// under the flat flagged layout, which has no workspace rows.
 public enum SidebarNumbering {
-    /// The digit keys reach ten rows: the tenth draws `0`, every later row the stub.
-    public static func symbolName(forPosition position: Int?) -> String {
-        guard let position, (1 ... 10).contains(position) else { return "circle.dashed" }
-        return "\(position % 10).circle"
+    /// The digit keys reach ten rows: every later row, or one with no position, draws the keyless stub.
+    public static func isStub(_ position: Int?) -> Bool {
+        guard let position else { return true }
+        return !(1 ... 10).contains(position)
+    }
+
+    /// The tenth row draws `0`. A flag fills the circle; the stub has no filled form, so it hides the flag.
+    public static func symbolName(forPosition position: Int?, flagged: Bool = false) -> String {
+        guard let position, !isStub(position) else { return "circle.dashed" }
+        return "\(position % 10).circle" + (flagged ? ".fill" : "")
+    }
+
+    /// Flagged modes show only flagged rows, so a fill there would mark every row: only the ordinary tree shows it.
+    @MainActor
+    public static func showsFlag(ofSession id: UUID, in store: AppStore) -> Bool {
+        store.sidebarMode == .tree && store.session(withID: id)?.flagged == true
+    }
+
+    /// Membership, not the filter: a marked workspace and its sessions stay bright with the filter off.
+    /// Flagged modes ignore focus.
+    @MainActor
+    public static func isFocusMember(workspace id: UUID, in store: AppStore) -> Bool {
+        store.sidebarMode == .tree && store.focusedWorkspaceIDs.contains(id)
+    }
+
+    @MainActor
+    public static func isFocusMember(session id: UUID, in store: AppStore) -> Bool {
+        guard let workspace = store.workspace(forSession: id) else { return false }
+        return isFocusMember(workspace: workspace.id, in: store)
     }
 
     @MainActor

@@ -27,9 +27,11 @@ paths:
 - The leading row glyph names the key that selects the row: `SidebarNumbering` gives its 1-based visible
   position, workspaces over `AppStore.workspaceProjection` and sessions from 1 inside their row, or down the
   whole flat flagged list, as `N.circle`, `0.circle` for the tenth, and the keyless `circle.dashed` past ten.
-  The slot shows nothing else: split, remote, disconnected, flag and focus membership have no
-  row icon. Positions follow the order `TreeShape` carries, so a renumber always takes the rebuild branch and
-  `RowContent` holds no glyph.
+  Split, remote and disconnected have no row icon. Only in the ordinary tree, a flagged session fills its
+  circle (`N.circle.fill`) and a focus-set workspace and its sessions draw at full alpha, filter on or off;
+  the stub stays at 0.4 and unfilled. Flagged modes show neither: every row there is flagged.
+  Positions follow the order `TreeShape` carries, so a renumber always takes the rebuild branch and
+  `RowContent` holds no glyph; a flag or membership change reloads its rows through `RowContent` instead.
 
 ## Drag and row actions
 

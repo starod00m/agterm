@@ -28,6 +28,13 @@ final class SidebarCellView: NSTableCellView {
     /// collapse-the-slot convention of `StatusIconView.widthConstraint`, so an idle row's name reclaims it.
     var addButtonWidthConstraint: NSLayoutConstraint?
 
+    /// How bright `setColors` draws the leading glyph. Focus membership is told by brightness alone, never a
+    /// hue, so it cannot read as an agent status; the keyless stub stays dim in every row state.
+    enum GlyphEmphasis { case normal, focus, stub }
+
+    /// Set by the cell builder before its first `setColors`; every later re-tint reads it back.
+    var glyphEmphasis = GlyphEmphasis.normal
+
     private static let addButtonWidth: CGFloat = 16
     private var hoverTrackingArea: NSTrackingArea?
 
@@ -95,7 +102,12 @@ final class SidebarCellView: NSTableCellView {
             : (app.terminalForegroundColor ?? .labelColor)
         textField?.textColor = color
         let iconAlpha: CGFloat = selected ? 0.85 : 0.6
-        imageView?.contentTintColor = color.withAlphaComponent(iconAlpha)
+        let glyphAlpha: CGFloat = switch glyphEmphasis {
+        case .normal: iconAlpha
+        case .focus: 1
+        case .stub: 0.4
+        }
+        imageView?.contentTintColor = color.withAlphaComponent(glyphAlpha)
         addButton?.contentTintColor = color.withAlphaComponent(iconAlpha)
     }
 }

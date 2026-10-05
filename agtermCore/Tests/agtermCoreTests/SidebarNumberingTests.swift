@@ -91,7 +91,48 @@ struct SidebarNumberingTests {
         #expect(SidebarNumbering.position(ofSession: firstFlagged.id, in: store, flaggedLayout: .flat) == 1)
         let positions = secondFlagged.map { SidebarNumbering.position(ofSession: $0.id, in: store, flaggedLayout: .flat) }
         #expect(positions == Array(2 ... 11))
-        #expect(positions.suffix(2).map(SidebarNumbering.symbolName(forPosition:)) == ["0.circle", "circle.dashed"])
+        #expect(positions.suffix(2).map { SidebarNumbering.symbolName(forPosition: $0) } == ["0.circle", "circle.dashed"])
         #expect(SidebarNumbering.symbolName(forPosition: nil) == "circle.dashed")
+    }
+
+    @Test func aFlagFillsTheNumberedCircleButNeverTheStub() {
+        #expect(SidebarNumbering.symbolName(forPosition: 3, flagged: true) == "3.circle.fill")
+        #expect(SidebarNumbering.symbolName(forPosition: 10, flagged: true) == "0.circle.fill")
+        #expect(SidebarNumbering.symbolName(forPosition: 11, flagged: true) == "circle.dashed")
+        #expect(SidebarNumbering.symbolName(forPosition: nil, flagged: true) == "circle.dashed")
+        #expect([nil, 0, 1, 10, 11].map(SidebarNumbering.isStub) == [true, true, false, false, true])
+    }
+
+    @Test func theOrdinaryTreeShowsTheFlagAndFocusMembershipWithTheFilterOnOrOff() throws {
+        let store = makeStore()
+        let marked = store.addWorkspace(name: "marked")
+        let other = store.addWorkspace(name: "other")
+        let flagged = try #require(store.addSession(toWorkspace: marked.id, cwd: "/"))
+        let plain = try #require(store.addSession(toWorkspace: other.id, cwd: "/"))
+        flagged.flagged = true
+        store.setFocusMembership(marked.id, member: true)
+
+        for enabled in [false, true] {
+            store.setFocusEnabled(enabled)
+            #expect(SidebarNumbering.showsFlag(ofSession: flagged.id, in: store))
+            #expect(!SidebarNumbering.showsFlag(ofSession: plain.id, in: store))
+            #expect(SidebarNumbering.isFocusMember(workspace: marked.id, in: store))
+            #expect(SidebarNumbering.isFocusMember(session: flagged.id, in: store))
+            #expect(!SidebarNumbering.isFocusMember(workspace: other.id, in: store))
+            #expect(!SidebarNumbering.isFocusMember(session: plain.id, in: store))
+        }
+    }
+
+    @Test func flaggedModesShowNeitherTheFlagNorFocusMembership() throws {
+        let store = makeStore()
+        let marked = store.addWorkspace(name: "marked")
+        let flagged = try #require(store.addSession(toWorkspace: marked.id, cwd: "/"))
+        flagged.flagged = true
+        store.setFocusMembership(marked.id, member: true)
+        store.setSidebarMode(.flagged)
+
+        #expect(!SidebarNumbering.showsFlag(ofSession: flagged.id, in: store))
+        #expect(!SidebarNumbering.isFocusMember(workspace: marked.id, in: store))
+        #expect(!SidebarNumbering.isFocusMember(session: flagged.id, in: store))
     }
 }

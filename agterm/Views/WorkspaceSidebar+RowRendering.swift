@@ -53,8 +53,9 @@ extension WorkspaceSidebar.Coordinator {
             // roll-up badge so an unseen notification stays visible when the workspace is collapsed
             // (gated by the Settings badge toggle, like the session badge below)
             applyBadge(toCell: cell, count: effectiveUnseen(workspace.map(displayedUnseen(for:)) ?? 0))
-            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(
-                ofWorkspace: node.id, in: store, flaggedLayout: GhosttyApp.shared.flaggedViewLayout))
+            applyGlyph(toCell: cell, position: SidebarNumbering.position(
+                ofWorkspace: node.id, in: store, flaggedLayout: GhosttyApp.shared.flaggedViewLayout),
+                flagged: false, focus: SidebarNumbering.isFocusMember(workspace: node.id, in: store))
             cell.imageView?.setAccessibilityIdentifier("workspace-icon")
         case .session:
             field.stringValue = rowLabel(forSession: node.id)
@@ -64,8 +65,10 @@ extension WorkspaceSidebar.Coordinator {
             let session = store.session(withID: node.id)
             applyBadge(toCell: cell, count: effectiveUnseen(session?.unseenCount ?? 0))
             cell.statusIcon.apply(effectiveIndicator(forSession: node.id))
-            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(
-                ofSession: node.id, in: store, flaggedLayout: GhosttyApp.shared.flaggedViewLayout))
+            applyGlyph(toCell: cell, position: SidebarNumbering.position(
+                ofSession: node.id, in: store, flaggedLayout: GhosttyApp.shared.flaggedViewLayout),
+                flagged: SidebarNumbering.showsFlag(ofSession: node.id, in: store),
+                focus: SidebarNumbering.isFocusMember(session: node.id, in: store))
             cell.imageView?.setAccessibilityIdentifier("session-icon")
         }
         // text/icon colors track the terminal theme; a selected row uses the selection foreground.
@@ -76,6 +79,12 @@ extension WorkspaceSidebar.Coordinator {
         let selected = outlineView.selectedRowIndexes.contains(outlineView.row(forItem: item))
         cell.setColors(selected: selected)
         return cell
+    }
+
+    /// The glyph's shape and brightness state; the tint itself follows from the builder's `setColors`.
+    private func applyGlyph(toCell cell: SidebarCellView, position: Int?, flagged: Bool, focus: Bool) {
+        cell.imageView?.image = rowIcon(forPosition: position, flagged: flagged)
+        cell.glyphEmphasis = SidebarNumbering.isStub(position) ? .stub : focus ? .focus : .normal
     }
 
     /// Shows the unseen-notification `count` capsule on the row (hidden, zero-width when 0, so the
