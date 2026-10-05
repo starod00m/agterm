@@ -445,6 +445,14 @@ struct AppSettingsTests {
         #expect(AppSettings.sidebarRowHeight(fontSize: 99) == AppSettings.sidebarFontSizeRange.upperBound.rounded() + 15)
     }
 
+    @Test func sidebarRowGlyphSideScalesWithFontSize() {
+        #expect(AppSettings.sidebarRowGlyphSide(fontSize: 9) == 12)
+        #expect(AppSettings.sidebarRowGlyphSide(fontSize: 13) == 16)
+        #expect(AppSettings.sidebarRowGlyphSide(fontSize: 20) == 23)
+        #expect(AppSettings.sidebarRowGlyphSide(fontSize: 2) == 12)
+        #expect(AppSettings.sidebarRowGlyphSide(fontSize: 99) == 23)
+    }
+
     @Test func defaultThemeIsAgtermButNotBakedIntoAppSettings() {
         #expect(AppSettings.defaultTheme == "agterm")
         // the seed lives in SettingsStore.load, NOT the memberwise default — AppSettings() stays

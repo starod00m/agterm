@@ -35,6 +35,10 @@ final class SidebarCellView: NSTableCellView {
     /// Set by the cell builder before its first `setColors`; every later re-tint reads it back.
     var glyphEmphasis = GlyphEmphasis.normal
 
+    /// Width and height of `imageView`, resized by the cell builder on every configure: a reused cell
+    /// outlives a sidebar font-size change.
+    var glyphSideConstraints: [NSLayoutConstraint] = []
+
     private static let addButtonWidth: CGFloat = 16
     private var hoverTrackingArea: NSTrackingArea?
 

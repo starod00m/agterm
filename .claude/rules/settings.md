@@ -37,7 +37,8 @@ paths:
 - `sidebarFontSize` and `interfaceFontSize` are separate settings, both 9...20 default 13, read through
   `effectiveSidebarFontSize`/`effectiveInterfaceFontSize`. Neither falls back to the other: the sidebar
   is a density knob, the palette a readability one.
-  `sidebarFontSize` drives sidebar rows and their height (clamped size + 15, so 13 gives 28).
+  `sidebarFontSize` drives sidebar rows, their height (clamped size + 15, so 13 gives 28), and the leading
+  row glyph (size + 3 square frame).
   `interfaceFontSize` drives the palette/picker, the session switcher, and the title-bar popover rows
   that share `SessionSwitcherRow`; `InterfaceMetrics` derives the secondary (subtitle/badge) and
   shortcut sizes plus the panel scale from it, anchored so 13 reproduces the previously hardcoded

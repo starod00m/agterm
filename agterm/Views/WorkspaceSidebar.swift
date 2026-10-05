@@ -781,19 +781,26 @@ struct WorkspaceSidebar: NSViewRepresentable {
             return node.kind == .workspace
         }
 
-        /// Leading row glyphs (`SidebarNumbering` symbols) as monochrome templates `setColors` tints, by name.
-        private var rowIcons: [String: NSImage] = [:]
+        private struct RowIconKey: Hashable {
+            let name: String
+            let pointSize: CGFloat
+        }
+
+        /// Leading row glyphs (`SidebarNumbering` symbols) as monochrome templates `setColors` tints, drawn at
+        /// the sidebar font size.
+        private var rowIcons: [RowIconKey: NSImage] = [:]
 
         func rowIcon(forPosition position: Int?, flagged: Bool = false) -> NSImage? {
-            let name = SidebarNumbering.symbolName(forPosition: position, flagged: flagged)
-            if let cached = rowIcons[name] { return cached }
-            let image = Self.rowIcon(name)
-            rowIcons[name] = image
+            let key = RowIconKey(name: SidebarNumbering.symbolName(forPosition: position, flagged: flagged),
+                                 pointSize: GhosttyApp.shared.sidebarFontSize)
+            if let cached = rowIcons[key] { return cached }
+            let image = Self.rowIcon(key.name, pointSize: key.pointSize)
+            rowIcons[key] = image
             return image
         }
 
-        private static func rowIcon(_ symbolName: String) -> NSImage? {
-            let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        private static func rowIcon(_ symbolName: String, pointSize: CGFloat) -> NSImage? {
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
             let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(config)
             image?.isTemplate = true

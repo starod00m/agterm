@@ -180,8 +180,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// The sidebar row-text point size used when `sidebarFontSize` is nil; matches macOS `.body` (13pt).
     public static let defaultSidebarFontSize: Double = 13
 
-    /// The Settings stepper bounds, kept modest so the fixed-size row icons and status glyphs stay
-    /// visually balanced against the text at either end.
+    /// The Settings stepper bounds, kept modest so the fixed-size status glyphs stay visually balanced
+    /// against the text at either end.
     public static let sidebarFontSizeRange: ClosedRange<Double> = 9 ... 20
 
     /// The palette/switcher text point size used when `interfaceFontSize` is nil; matches macOS `.body`
@@ -550,9 +550,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     /// The outline row height: the clamped point size plus a fixed 15pt of vertical padding, so the
-    /// default 13pt maps to a 28pt row. The row icon and status glyph keep their fixed sizes.
+    /// default 13pt maps to a 28pt row. The status glyph keeps its fixed size.
     public static func sidebarRowHeight(fontSize: Double) -> Double {
         clampSidebarFontSize(fontSize).rounded() + 15
+    }
+
+    /// The square frame of the leading row glyph, 3pt wider than the clamped point size so the default 13pt
+    /// keeps the 16pt frame. Every glyph shape shares it, so row names stay on one vertical.
+    public static func sidebarRowGlyphSide(fontSize: Double) -> Double {
+        clampSidebarFontSize(fontSize).rounded() + 3
     }
 
     /// The theme name that renders for the given appearance, the dark slot falling back to `theme`. Used

@@ -81,8 +81,10 @@ extension WorkspaceSidebar.Coordinator {
         return cell
     }
 
-    /// The glyph's shape and brightness state; the tint itself follows from the builder's `setColors`.
+    /// The glyph's shape, size and brightness state; the tint itself follows from the builder's `setColors`.
     private func applyGlyph(toCell cell: SidebarCellView, position: Int?, flagged: Bool, focus: Bool) {
+        let side = AppSettings.sidebarRowGlyphSide(fontSize: Double(GhosttyApp.shared.sidebarFontSize))
+        for constraint in cell.glyphSideConstraints { constraint.constant = side }
         cell.imageView?.image = rowIcon(forPosition: position, flagged: flagged)
         cell.glyphEmphasis = SidebarNumbering.isStub(position) ? .stub : focus ? .focus : .normal
     }
@@ -140,11 +142,12 @@ extension WorkspaceSidebar.Coordinator {
         badge.setContentCompressionResistancePriority(.required, for: .horizontal)
         cell.addSubview(badge)
 
-        var constraints: [NSLayoutConstraint] = [
+        // sized by applyGlyph
+        cell.glyphSideConstraints = [icon.widthAnchor.constraint(equalToConstant: 0),
+                                     icon.heightAnchor.constraint(equalToConstant: 0)]
+        var constraints: [NSLayoutConstraint] = cell.glyphSideConstraints + [
             icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
             icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 16),
-            icon.heightAnchor.constraint(equalToConstant: 16),
             field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
             field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             // chain: name (flex) | [+ button for workspace] | status icon | badge (trailing).

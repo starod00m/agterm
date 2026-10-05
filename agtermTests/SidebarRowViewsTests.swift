@@ -14,10 +14,12 @@ final class SidebarRowViewsTests: XCTestCase {
     private var scroll: NSScrollView!
     private var outline: SidebarOutlineView!
     private var coordinator: WorkspaceSidebar.Coordinator!
+    private var originalSidebarFontSize: CGFloat!
 
     override func setUp() async throws {
         try await super.setUp()
         await MainActor.run {
+            originalSidebarFontSize = GhosttyApp.shared.sidebarFontSize
             stateDir = FileManager.default.temporaryDirectory
                 .appendingPathComponent("agterm-row-views-tests-\(UUID().uuidString)", isDirectory: true)
             library = WindowLibrary(directory: stateDir)
@@ -27,6 +29,7 @@ final class SidebarRowViewsTests: XCTestCase {
 
     override func tearDown() async throws {
         await MainActor.run {
+            GhosttyApp.shared.setSidebarFontSize(Double(originalSidebarFontSize))
             window?.orderOut(nil)
             window = nil
             scroll = nil
@@ -203,6 +206,38 @@ final class SidebarRowViewsTests: XCTestCase {
 
         XCTAssertEqual(try renderedIcon(forRow: eleventh.id), coordinator.rowIcon(forPosition: nil))
         XCTAssertEqual(try glyphAlpha(forRow: eleventh.id), 0.4, accuracy: 0.001)
+    }
+
+    func testTheGlyphFrameAndNameColumnFollowTheSidebarFontSize() throws {
+        let store = try XCTUnwrap(library.activeStore)
+        let workspace = store.workspaces[0]
+        let plain = try XCTUnwrap(workspace.sessions.first)
+        let added = try (0..<10).map { _ in try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a", select: false)) }
+        let flagged = added[0]
+        let stub = try XCTUnwrap(added.last)
+        store.setFlag(true, forSession: flagged.id)
+        buildSidebar(for: store)
+
+        var previousGlyphHeight: CGFloat = 0
+        for size in [9.0, 13, 20] {
+            GhosttyApp.shared.setSidebarFontSize(size)
+            NotificationCenter.default.post(name: .agtermAppearanceChanged, object: nil)
+
+            let side = AppSettings.sidebarRowGlyphSide(fontSize: size)
+            let cells = try [plain.id, flagged.id, stub.id].map { try renderedRowCell(forRow: $0) }
+            for cell in cells {
+                cell.layoutSubtreeIfNeeded()
+                let icon = try XCTUnwrap(cell.imageView)
+                // the symbol's alignment insets make the frame taller than the square the constraints pin
+                XCTAssertEqual(icon.alignmentRect(forFrame: icon.frame).size, NSSize(width: side, height: side), "at \(size) pt")
+            }
+            let nameX = try cells.map { try XCTUnwrap($0.textField).frame.minX }
+            XCTAssertEqual(Set(nameX).count, 1, "outline, fill and stub must leave the names on one vertical at \(size) pt")
+            XCTAssertEqual(try renderedIcon(forRow: flagged.id), coordinator.rowIcon(forPosition: 2, flagged: true))
+            let glyphHeight = try XCTUnwrap(renderedIcon(forRow: plain.id)).size.height
+            XCTAssertGreaterThan(glyphHeight, previousGlyphHeight, "the symbol is configured at the font size, not only framed")
+            previousGlyphHeight = glyphHeight
+        }
     }
 
     func testFlaggedRenameRestoresTheLabelAfterAnUnchangedCustomName() async throws {
