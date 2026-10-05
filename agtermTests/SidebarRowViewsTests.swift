@@ -234,7 +234,7 @@ final class SidebarRowViewsTests: XCTestCase {
             let nameX = try cells.map { try XCTUnwrap($0.textField).frame.minX }
             XCTAssertEqual(Set(nameX).count, 1, "outline, fill and stub must leave the names on one vertical at \(size) pt")
             XCTAssertEqual(try renderedIcon(forRow: flagged.id), coordinator.rowIcon(forPosition: 2, flagged: true))
-            let glyphHeight = try XCTUnwrap(renderedIcon(forRow: plain.id)).size.height
+            let glyphHeight = try renderedIcon(forRow: plain.id).size.height
             XCTAssertGreaterThan(glyphHeight, previousGlyphHeight, "the symbol is configured at the font size, not only framed")
             previousGlyphHeight = glyphHeight
         }
@@ -397,8 +397,8 @@ final class SidebarRowViewsTests: XCTestCase {
         return try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
     }
 
-    private func renderedIcon(forRow id: UUID) throws -> NSImage? {
-        try renderedRowCell(forRow: id).imageView?.image
+    private func renderedIcon(forRow id: UUID) throws -> NSImage {
+        try XCTUnwrap(renderedRowCell(forRow: id).imageView?.image)
     }
 
     private func glyphAlpha(forRow id: UUID) throws -> CGFloat {
