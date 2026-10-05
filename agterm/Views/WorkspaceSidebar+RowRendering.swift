@@ -53,7 +53,8 @@ extension WorkspaceSidebar.Coordinator {
             // roll-up badge so an unseen notification stays visible when the workspace is collapsed
             // (gated by the Settings badge toggle, like the session badge below)
             applyBadge(toCell: cell, count: effectiveUnseen(workspace.map(displayedUnseen(for:)) ?? 0))
-            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(ofWorkspace: node.id, in: store))
+            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(
+                ofWorkspace: node.id, in: store, flaggedLayout: GhosttyApp.shared.flaggedViewLayout))
             cell.imageView?.setAccessibilityIdentifier("workspace-icon")
         case .session:
             field.stringValue = rowLabel(forSession: node.id)
@@ -63,7 +64,8 @@ extension WorkspaceSidebar.Coordinator {
             let session = store.session(withID: node.id)
             applyBadge(toCell: cell, count: effectiveUnseen(session?.unseenCount ?? 0))
             cell.statusIcon.apply(effectiveIndicator(forSession: node.id))
-            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(ofSession: node.id, in: store))
+            cell.imageView?.image = rowIcon(forPosition: SidebarNumbering.position(
+                ofSession: node.id, in: store, flaggedLayout: GhosttyApp.shared.flaggedViewLayout))
             cell.imageView?.setAccessibilityIdentifier("session-icon")
         }
         // text/icon colors track the terminal theme; a selected row uses the selection foreground.

@@ -412,7 +412,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
             reloadChangedContentRows()
         }
 
-        /// The structural shape for the current mode and layout: the workspace rows `workspaceProjection`
+        /// The structural shape for the current mode and layout: the workspace rows `AppStore.workspaceProjection`
         /// yields, or one flat group of the flagged session ids. A change means an add/remove/move/reorder
         /// (or a flag/unflag in flagged mode) and forces a full rebuild. The ordinary tree derives from
         /// `visibleWorkspaces`, so marking a workspace or flipping the focus filter counts as a shape change too.
@@ -420,7 +420,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
             guard rendersWorkspaceRows else {
                 return [TreeShape(workspaceID: Self.flaggedShapeID, sessionIDs: store.flaggedSessions.map(\.id))]
             }
-            return workspaceProjection.map { TreeShape(workspaceID: $0.workspace.id, sessionIDs: $0.sessions.map(\.id)) }
+            return store.workspaceProjection.map { TreeShape(workspaceID: $0.workspace.id, sessionIDs: $0.sessions.map(\.id)) }
         }
 
         /// Updates only the rows whose visible content changed — the session row and, for a badge roll-up,
@@ -518,7 +518,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
 
             var seen = Set<UUID>()
             var newRoots: [SidebarNode] = []
-            for (workspace, sessions) in workspaceProjection {
+            for (workspace, sessions) in store.workspaceProjection {
                 let wsNode = node(for: workspace.id, kind: .workspace)
                 seen.insert(workspace.id)
                 wsNode.children = sessions.map { session in

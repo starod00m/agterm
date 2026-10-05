@@ -25,9 +25,9 @@ paths:
   indent and trailing-edge cases everywhere, and `testBelowTheGateFramesMatchAPlainOutline` only below the
   gate, where it is the only thing pinning earlier layouts as untouched. Do not re-gate or drop it.
 - The leading row glyph names the key that selects the row: `SidebarNumbering` gives its 1-based visible
-  position, workspaces over `visibleWorkspaces` and sessions from 1 inside their workspace, as `N.circle`,
-  `0.circle` for the tenth, and the keyless `circle.dashed` past ten and in flagged mode, which has no
-  positions yet. The slot shows nothing else: split, remote, disconnected, flag and focus membership have no
+  position, workspaces over `AppStore.workspaceProjection` and sessions from 1 inside their row, or down the
+  whole flat flagged list, as `N.circle`, `0.circle` for the tenth, and the keyless `circle.dashed` past ten.
+  The slot shows nothing else: split, remote, disconnected, flag and focus membership have no
   row icon. Positions follow the order `TreeShape` carries, so a renumber always takes the rebuild branch and
   `RowContent` holds no glyph.
 
@@ -93,14 +93,15 @@ paths:
 - Flagged mode has two layouts, chosen by the app-wide `FlaggedViewLayout` setting ([[settings]]), not per window.
   `flat` is one non-expandable outline labeled `session : workspace`.
   `tree` renders workspace rows holding only their flagged sessions, omits workspaces with none, and drops the suffix.
-  Both use the stub glyph, status, and badge, ignore workspace focus, disable drag reorder, and show
+  Both number their rows, keep status and badge, ignore workspace focus, disable drag reorder, and show
   the tinted non-scrolling hint `No flagged sessions. / Right-click a session → Flag.` when empty.
 - The layout is orthogonal to `SidebarMode`, never a third case: every `sidebarMode == .flagged` check in
   `agtermCore` means "the flagged set is what is visible", which holds in both layouts.
   `AppStore.rendersWorkspaceRows(flaggedLayout:)` is the one predicate for "the outline has workspace rows",
   taking the layout as a parameter because the store does not hold app-wide state.
-- `Coordinator.workspaceProjection` yields the workspace rows for the ordinary tree AND the flagged tree, so
-  `rebuildAndReload` keeps one expansion-restore path. Never add a parallel flagged-tree build.
+- `AppStore.workspaceProjection` yields the workspace rows for the ordinary tree AND the flagged tree, so
+  `rebuildAndReload` keeps one expansion-restore path and the glyph numbers exactly the rows drawn.
+  Never add a parallel flagged-tree build.
 - A flagged-tree header badge sums only its flagged children (`displayedUnseen(for:)`), in both the cell
   builder and the content-diff builder. `Workspace.unseenCount` sums every session and would report
   notifications from rows the view leaves out.

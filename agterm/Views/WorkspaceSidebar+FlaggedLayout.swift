@@ -12,18 +12,6 @@ extension WorkspaceSidebar.Coordinator {
         store.rendersWorkspaceRows(flaggedLayout: GhosttyApp.shared.flaggedViewLayout)
     }
 
-    /// The workspace rows and their session rows, in store order. The flagged tree reads ALL workspaces, not
-    /// `visibleWorkspaces`: flagged mode ignores the focus filter, and a group with nothing flagged has no row.
-    var workspaceProjection: [(workspace: Workspace, sessions: [Session])] {
-        guard store.sidebarMode == .flagged else {
-            return store.visibleWorkspaces.map { ($0, $0.sessions) }
-        }
-        return store.workspaces.compactMap { workspace in
-            let flagged = workspace.sessions.filter(\.flagged)
-            return flagged.isEmpty ? nil : (workspace, flagged)
-        }
-    }
-
     /// The unseen count a workspace row shows: its RENDERED children's. `Workspace.unseenCount` sums every
     /// session, so a flagged-tree header would otherwise report notifications from rows the view leaves out.
     func displayedUnseen(for workspace: Workspace) -> Int {

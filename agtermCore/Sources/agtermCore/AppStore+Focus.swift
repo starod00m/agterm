@@ -191,6 +191,19 @@ extension AppStore {
         sidebarMode == .tree || flaggedLayout == .tree
     }
 
+    /// The workspace rows and their session rows, in store order, for the ordinary tree AND the flagged tree.
+    /// The flagged tree reads ALL workspaces, not `visibleWorkspaces`: flagged mode ignores the focus filter, and
+    /// a group with nothing flagged has no row.
+    public var workspaceProjection: [(workspace: Workspace, sessions: [Session])] {
+        guard sidebarMode == .flagged else {
+            return visibleWorkspaces.map { ($0, $0.sessions) }
+        }
+        return workspaces.compactMap { workspace in
+            let flagged = workspace.sessions.filter(\.flagged)
+            return flagged.isEmpty ? nil : (workspace, flagged)
+        }
+    }
+
     /// The session set navigation operates over — the VISIBLE/FILTERED set, not the whole tree: flagged
     /// sessions in `.flagged` mode, the marked workspaces' sessions while the filter is on, else all. Computed
     /// live, so clearing the flag/filter restores the full set. `navigateSession` next/prev WRAP within it,
