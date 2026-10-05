@@ -132,13 +132,14 @@ final class SidebarRowViewsTests: XCTestCase {
         XCTAssertEqual(try renderedIcon(forRow: added[1].id), coordinator.rowIcon(forPosition: 2))
     }
 
-    func testMarkingAWorkspaceBrightensItAndItsSessionsWithTheFilterOff() throws {
+    func testMarkingAWorkspaceBrightensItAndItsSessionsWithTheFilterOffUntilUnmarked() throws {
         let store = try XCTUnwrap(library.activeStore)
         let marked = store.workspaces[0]
         let selected = try XCTUnwrap(marked.sessions.first)
         let sibling = try XCTUnwrap(store.addSession(toWorkspace: marked.id, cwd: "/a", select: false))
         let other = store.addWorkspace(name: "other")
         let outside = try XCTUnwrap(store.addSession(toWorkspace: other.id, cwd: "/a", select: false))
+        store.setFlag(true, forSession: sibling.id)
         store.selectSession(selected.id)
         buildSidebar(for: store)
         coordinator.syncSelection()
@@ -157,6 +158,16 @@ final class SidebarRowViewsTests: XCTestCase {
             XCTAssertEqual(try glyphAlpha(forRow: id), 1, accuracy: 0.001)
         }
         for id in [other.id, outside.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
+        }
+        XCTAssertEqual(try renderedIcon(forRow: sibling.id), coordinator.rowIcon(forPosition: 2, flagged: true))
+
+        store.setFocusMembership(marked.id, member: false)
+        coordinator.reconcile()
+        coordinator.refreshSelectionAppearance()
+
+        XCTAssertEqual(try glyphAlpha(forRow: selected.id), 0.85, accuracy: 0.001)
+        for id in [marked.id, sibling.id] {
             XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
         }
     }
