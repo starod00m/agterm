@@ -418,6 +418,10 @@ struct CommandsTests {
         #expect(try request(["session", "scratch"]) == expected)
     }
 
+    @Test func sessionScratchFollow() throws {
+        #expect(try request(["session", "scratch", "on", "--follow"]).args?.follow == true)
+    }
+
     @Test func sessionScratchOff() throws {
         let expected = ControlRequest(cmd: .sessionScratch, target: "active", args: ControlArgs(mode: "off"))
         #expect(try request(["session", "scratch", "off"]) == expected)
@@ -1613,9 +1617,9 @@ struct CommandsTests {
             == ControlRequest(cmd: .sidebarFlaggedLayout, args: ControlArgs(mode: "toggle")))
     }
 
-    @Test func sidebarFlaggedLayoutTree() throws {
-        #expect(try request(["sidebar", "flagged-layout", "tree"])
-            == ControlRequest(cmd: .sidebarFlaggedLayout, args: ControlArgs(mode: "tree")))
+    @Test(arguments: ["flat", "plain", "tree"]) func sidebarFlaggedLayoutNamesALayout(_ layout: String) throws {
+        #expect(try request(["sidebar", "flagged-layout", layout])
+            == ControlRequest(cmd: .sidebarFlaggedLayout, args: ControlArgs(mode: layout)))
     }
 
     @Test func sidebarFlaggedLayoutRejectsBadLayoutAndAWindowTarget() {

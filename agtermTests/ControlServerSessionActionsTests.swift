@@ -726,10 +726,9 @@ final class ControlServerSessionActionsTests: XCTestCase {
                                                   env: ["AGTERM_PANE_ID": "right-token"])
         session.hasSplit = true
 
-        XCTAssertEqual(ControlServer.resolvedSessionTextPane(in: session, pane: .left, paneID: "right-token"),
-                       .right)
-        XCTAssertEqual(ControlServer.resolvedSessionTextPane(in: session, pane: .scratch, paneID: "unknown"),
-                       .scratch, "an unknown token falls back to the explicit role")
+        XCTAssertEqual(session.paneAddress(token: "right-token", pane: .left), .pane(.right))
+        XCTAssertEqual(session.paneAddress(token: "unknown", pane: .scratch), .pane(.scratch),
+                       "an unknown token falls back to the explicit role")
     }
 
     func testTextPaneIDFollowsItsSurfaceAfterSwap() throws {
@@ -744,8 +743,76 @@ final class ControlServerSessionActionsTests: XCTestCase {
 
         XCTAssertNil(store.swapPanes(session.id))
 
-        XCTAssertEqual(ControlServer.resolvedSessionTextPane(in: session, pane: .left, paneID: "moving-token"),
-                       .right)
+        XCTAssertEqual(session.paneAddress(token: "moving-token", pane: .left), .pane(.right))
+    }
+
+    // pins an unknown id given alone reading the on-screen pane and answering ok
+    func testAnUnknownPaneIDWithoutAPaneIsRefusedByTextTypeAndCursor() async throws {
+        let (store, session) = try addSession()
+        session.surface = GhosttySurfaceView(workingDirectory: NSTemporaryDirectory(),
+                                             env: ["AGTERM_PANE_ID": "left-token"])
+        let id = session.id.uuidString
+
+        let text = server.readSessionText(id, window: nil,
+                                          options: ControlSessionTextOptions(pane: nil, paneID: "gone", all: false, lines: nil))
+        let typed = await server.typeSession(id, window: nil,
+                                             options: ControlSessionTypeOptions(text: "x", select: false, pane: nil, paneID: "gone"))
+        let cursor = server.readSurfaceCursor(id, window: nil, paneID: "gone")
+
+        XCTAssertEqual(text.error, "unknown pane id: gone")
+        XCTAssertEqual(typed.error, "unknown pane id: gone")
+        XCTAssertEqual(cursor.error, "unknown pane id: gone")
+        XCTAssertEqual(store.selectedSessionID, session.id)
+    }
+
+    func testAPaneIDAddressesItsSlotForTextTypeAndCursor() async throws {
+        let (_, session) = try addSession()
+        session.surface = GhosttySurfaceView(workingDirectory: NSTemporaryDirectory(),
+                                             env: ["AGTERM_PANE_ID": "left-token"])
+        let id = session.id.uuidString
+
+        let text = server.readSessionText(id, window: nil,
+                                          options: ControlSessionTextOptions(pane: nil, paneID: "right-token", all: false, lines: nil))
+        let fallback = server.readSessionText(id, window: nil,
+                                              options: ControlSessionTextOptions(pane: .right, paneID: "gone", all: false, lines: nil))
+        let typed = await server.typeSession(id, window: nil,
+                                             options: ControlSessionTypeOptions(text: "x", select: false, pane: .right, paneID: "gone"))
+        let cursor = server.readSurfaceCursor(id, window: nil, paneID: "left-token")
+
+        XCTAssertEqual(text.error, "unknown pane id: right-token")
+        XCTAssertEqual(fallback.error, "session has no split pane", "an unknown id beside an explicit pane uses that pane")
+        XCTAssertEqual(typed.error, "session has no split pane")
+        XCTAssertEqual(cursor.error, "surface not realized", "the id resolved to the parked left pane")
+    }
+
+    // pins a pane replaced during the realize wait taking the keystrokes meant for the id's terminal
+    func testTypeByPaneIDFollowsTheIDThroughTheRealizeWait() async throws {
+        let (_, session) = try addSession()
+        session.surface = GhosttySurfaceView(workingDirectory: NSTemporaryDirectory(),
+                                             env: ["AGTERM_PANE_ID": "left-token"])
+        let server = try XCTUnwrap(self.server)
+        let id = session.id.uuidString
+
+        let typing = Task { @MainActor in
+            await server.typeSession(id, window: nil,
+                                     options: ControlSessionTypeOptions(text: "x", select: false, pane: nil, paneID: "left-token"))
+        }
+        try await Task.sleep(nanoseconds: 60_000_000)
+        session.surface = GhosttySurfaceView(workingDirectory: NSTemporaryDirectory(),
+                                             env: ["AGTERM_PANE_ID": "other-token"])
+        let typed = await typing.value
+
+        XCTAssertEqual(typed.error, "unknown pane id: left-token")
+    }
+
+    func testCursorPaneIDRefusesASurfaceTarget() throws {
+        let (_, session) = try addSession()
+        let id = session.id.uuidString
+
+        XCTAssertEqual(server.readSurfaceCursor("surface:\(id):left", window: nil, paneID: "left-token").error,
+                       "surface.cursor: --pane-id takes a session target")
+        XCTAssertEqual(server.readSurfaceCursor("quick", window: nil, paneID: "left-token").error,
+                       "surface.cursor: --pane-id takes a session target")
     }
 
     // the same parked pane, one command over: `surfaceBindingAction`'s cast proves only that the SLOT is
@@ -1015,7 +1082,7 @@ final class ControlServerSessionActionsTests: XCTestCase {
         XCTAssertTrue(server.openHud(session.id.uuidString, window: nil, spec: spec,
                                      placement: ControlHudPlacement(pane: .left)).ok)
 
-        XCTAssertEqual(HudPanelSize(widthPercent: session.overlaySizePercent ?? 0, heightPercent: session.hudHeightPercent ?? 0), size)
+        XCTAssertEqual(session.hudPanelSize, size)
         XCTAssertEqual(headerGrid(session), gridField(HudLayout.paintGrid(for: spec, size: size, pane: hudMetrics)))
 
         store.setFontSize(session.id, 12)
@@ -1025,12 +1092,13 @@ final class ControlServerSessionActionsTests: XCTestCase {
 
         let updated = HudLayout.panelSize(for: update, pane: hudMetrics)
         XCTAssertNotEqual(updated, HudLayout.panelSize(for: update, pane: server.paneMetrics(for: session, pane: .left, fontSize: 12)))
-        XCTAssertEqual(HudPanelSize(widthPercent: session.overlaySizePercent ?? 0, heightPercent: session.hudHeightPercent ?? 0), updated)
+        XCTAssertEqual(session.hudPanelSize, updated)
 
         XCTAssertTrue(server.resizeSessionOverlay(session.id.uuidString, window: nil, sizePercent: 50).ok)
 
-        let resized = HudPanelSize(widthPercent: 50, heightPercent: updated.heightPercent)
-        let live = try XCTUnwrap(session.hudSpec)
+        let live = try XCTUnwrap(session.effectiveHudSpec)
+        let resized = HudLayout.panelSize(for: live, pane: hudMetrics)
+        XCTAssertEqual(session.hudPanelSize, resized)
         XCTAssertEqual(headerGrid(session), gridField(HudLayout.paintGrid(for: live, size: resized, pane: hudMetrics)))
         XCTAssertNotEqual(headerGrid(session), gridField(HudLayout.paintGrid(
             for: live, size: resized, pane: server.paneMetrics(for: session, pane: .left, fontSize: 12))))
@@ -1044,10 +1112,11 @@ final class ControlServerSessionActionsTests: XCTestCase {
         "\(grid.columns) \(grid.rows)"
     }
 
-    func testAPaneShrinkReclipsAMarkdownHudOnceForABurst() async throws {
+    func testAPaneShrinkKeepsAMarkdownHudsRowsOnceForABurstAndClipsOnlyAtTheCap() async throws {
         let (_, session) = try makeHudSession()
         let message = (1...12).map { "- item \($0)" }.joined(separator: "\n")
         let before = try openLeftPaneHud(session, spec: HudSpec(message: message, markdown: true))
+        let points = try XCTUnwrap(session.hudHeightPoints)
         XCTAssertFalse(before.contains("more"))
 
         session.hudPaneFrames = HudPaneFrames(left: HudPaneFrame(x: 0, y: 0, width: 1_600, height: 400),
@@ -1057,15 +1126,24 @@ final class ControlServerSessionActionsTests: XCTestCase {
         XCTAssertEqual(server.hudGeometryPending, [session.id])
         await drainGeometry(session)
 
-        let after = try XCTUnwrap(bodyText(session))
-        XCTAssertEqual(after, try expectedLeftPaneBody(session))
-        XCTAssertNotEqual(after.split(separator: "\n").first, before.split(separator: "\n").first)
-        XCTAssertTrue(after.contains("… 10 more"))
+        XCTAssertEqual(bodyText(session), before, "the same rows fit a shorter pane, so nothing is rewrapped or clipped")
+        XCTAssertEqual(session.hudHeightPoints, points)
+
+        session.hudPaneFrames = HudPaneFrames(left: HudPaneFrame(x: 0, y: 0, width: 1_600, height: 150),
+                                              right: HudPaneFrame(x: 1_604, y: 0, width: 400, height: 150))
+        session.onHudGeometryChange?()
+        await drainGeometry(session)
+
+        let clipped = try XCTUnwrap(bodyText(session))
+        XCTAssertEqual(clipped, try expectedLeftPaneBody(session))
+        XCTAssertEqual(session.hudHeightPoints, 120)
+        XCTAssertTrue(clipped.contains("more"))
     }
 
-    func testAPaneShrinkRegridsAPlainHud() async throws {
+    func testAPaneShrinkKeepsAPlainHudsGridAndGivesItALargerShareOfThePane() async throws {
         let (_, session) = try makeHudSession()
         let before = try openLeftPaneHud(session, spec: HudSpec(message: "working on it"))
+        let share = try XCTUnwrap(session.hudPanelSize)
 
         session.hudPaneFrames = HudPaneFrames(left: HudPaneFrame(x: 0, y: 0, width: 700, height: 500),
                                               right: HudPaneFrame(x: 704, y: 0, width: 400, height: 500))
@@ -1074,7 +1152,11 @@ final class ControlServerSessionActionsTests: XCTestCase {
 
         let after = try XCTUnwrap(bodyText(session))
         XCTAssertEqual(after, try expectedLeftPaneBody(session))
-        XCTAssertNotEqual(after.split(separator: "\n").first, before.split(separator: "\n").first)
+        XCTAssertEqual(after, before, "the panel is measured to its text again, so the grid it paints in is the same")
+        let shrunk = try XCTUnwrap(session.hudPanelSize)
+        XCTAssertGreaterThan(shrunk.widthPercent, share.widthPercent)
+        XCTAssertGreaterThan(shrunk.heightPercent, share.heightPercent)
+        XCTAssertEqual(shrunk.heightPoints, share.heightPoints)
     }
 
     private func openLeftPaneHud(_ session: Session, spec: HudSpec) throws -> String {
@@ -1097,9 +1179,8 @@ final class ControlServerSessionActionsTests: XCTestCase {
     }
 
     private func expectedLeftPaneBody(_ session: Session) throws -> String {
-        let spec = try XCTUnwrap(session.hudSpec)
-        let size = HudPanelSize(widthPercent: try XCTUnwrap(session.overlaySizePercent),
-                                heightPercent: try XCTUnwrap(session.hudHeightPercent))
+        let spec = try XCTUnwrap(session.effectiveHudSpec)
+        let size = try XCTUnwrap(session.hudPanelSize)
         let metrics = server.paneMetrics(for: session, pane: .left, fontSize: server.liveHudFontSize(session))
         return HudLayout.renderedBody(for: spec, grid: HudLayout.paintGrid(for: spec, size: size, pane: metrics),
                                       ownerPid: Self.ownerPid)
@@ -1286,6 +1367,17 @@ final class ControlServerSessionActionsTests: XCTestCase {
         XCTAssertEqual(ControlServer.cellSize(family: "Menlo", size: 26).width, menlo.width * 2, accuracy: 0.01)
     }
 
+    func testAHudIsSizedFromTheEstimateWhileItsSessionHasNoLiveSurface() throws {
+        let server = try XCTUnwrap(self.server)
+        let (_, session) = try makeHudSession()
+
+        XCTAssertNil(server.liveCellSize(of: session, fontSize: 13))
+        let estimate = ControlServer.cellSize(family: server.settingsModel.settings.fontFamily, size: 13)
+        let metrics = server.paneMetrics(for: session, fontSize: 13)
+        XCTAssertEqual(metrics.cellWidth, estimate.width, accuracy: 0.001)
+        XCTAssertEqual(metrics.cellHeight, estimate.height, accuracy: 0.001)
+    }
+
     // an unwritable body means the panel would paint nothing or stale text, so neither open nor update may
     // leave the store claiming a message the helper cannot read.
     func testAFailedBodyWriteRollsTheStoreBack() throws {
@@ -1311,6 +1403,7 @@ final class ControlServerSessionActionsTests: XCTestCase {
         XCTAssertEqual(resize.error, OverlayHudError.writeFailed)
         XCTAssertEqual(session.overlaySizePercent, size,
                        "a panel whose header cannot be rewritten must not move away from it")
+        XCTAssertNil(session.hudResizedWidthPercent, "and a measured width must not come back as a forced one")
 
         let open = server.openHud(session.id.uuidString, window: nil, spec: HudSpec(message: "also unwritable"))
         XCTAssertFalse(open.ok)

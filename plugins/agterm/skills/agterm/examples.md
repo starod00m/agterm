@@ -484,7 +484,8 @@ translucency (solid when off, blurred/translucent when on).
 A third per-session full-coverage shell. Hide keeps it alive; `exit` in it recreates on next show.
 
 ```bash
-agtermctl session scratch on        # show (selects the target)
+agtermctl session scratch on        # show; a --target that is not on screen stays unselected
+agtermctl session scratch on --target "$AGTERM_SESSION_ID" --follow   # show and switch to it
 agtermctl session scratch off       # hide, shell stays alive
 agtermctl session scratch toggle
 agtermctl session scratch on --command "zsh -lc 'lazygit'"   # run a program instead of a shell (run-once); login-shell wrap so Homebrew's PATH is found (bare "lazygit" exits 127)
@@ -507,8 +508,8 @@ agtermctl tree --json | jq '.result.tree.quickVisible'  # is it open right now?
 ## Flag a working set and view just the flagged sessions
 
 Flag a few sessions across workspaces, then flip the sidebar to the flagged view: one flat list with each
-row labeled `session : workspace`, or, under the tree layout, the flagged sessions nested under their
-workspace rows. The flag is durable (persisted per session); `sidebar mode` is per-window; the layout is
+row labeled `session : workspace` (or by session name alone under the `plain` layout), or, under the tree
+layout, the flagged sessions nested under their workspace rows. The flag is durable (persisted per session); `sidebar mode` is per-window; the layout is
 app-wide.
 
 ```bash
@@ -516,6 +517,7 @@ agtermctl session flag on --target "$AGTERM_SESSION_ID"   # flag this session
 agtermctl session flag on --target a1b2                   # flag another (any workspace)
 agtermctl sidebar mode flagged                            # show only the flagged sessions
 agtermctl sidebar flagged-layout tree                     # nest them under workspace rows, in every window
+agtermctl sidebar flagged-layout plain                    # or one flat list of session names, no workspace suffix
 agtermctl session go --to next                            # in flagged mode, nav steps the flagged set only
 agtermctl sidebar mode tree                               # back to the full tree
 agtermctl session flag clear                              # unflag everything in the window
@@ -682,6 +684,13 @@ agtermctl session text --lines 50              # the last 50 lines of the buffer
 agtermctl session text --pane right            # the split pane (errors if there is no split)
 agtermctl session text --pane-id "$AGTERM_PANE_ID" # this shell's terminal, even after a swap
 agtermctl session text --pane scratch --all    # the scratch terminal's full buffer, even while it's hidden
+# drive the split pane's terminal by its stable id, wherever a swap moves it; an empty id counts as no id
+# and reaches the default pane, so stop when the lookup finds none (no split, or the session is in another window)
+id=$(agtermctl tree --json | jq -er --arg s "$AGTERM_SESSION_ID" \
+  '.result.tree.workspaces[].sessions[] | select(.id == $s) | .surfaces[] | select(.kind == "right") | .paneID | select(. != null and . != "")') &&
+  agtermctl session text --pane-id "$id" --target "$AGTERM_SESSION_ID" --lines 5 &&
+  agtermctl surface cursor --pane-id "$id" --target "$AGTERM_SESSION_ID" &&
+  agtermctl session type $'make test\n' --pane-id "$id" --target "$AGTERM_SESSION_ID"
 # extract every URL from the full scrollback:
 agtermctl session text --all --json | jq -r '.result.text' | grep -oE 'https?://[^ ]+'
 ```
@@ -728,8 +737,9 @@ agtermctl events --json --kind status |
   head -n 1
 ```
 
-The pipeline ends after the match. A transport or cursor failure makes `agtermctl events` exit
-non-zero; preserve pipeline status in automation that must distinguish a match from a failed stream.
+The pipeline ends after the match. A cursor failure, or a transport failure the CLI does not retry,
+makes `agtermctl events` exit non-zero; preserve pipeline status in automation that must distinguish a
+match from a failed stream.
 
 ## Relay accepted notifications
 
@@ -833,6 +843,10 @@ surface=$(agtermctl tree --json |
     | .id')
 agtermctl surface zoom show --target "$surface"
 agtermctl surface zoom hide --target "$surface"
+
+# Look at the session under a running overlay and come back; the overlay keeps running meanwhile.
+# The explicit id matters: with an overlay open, a bare `surface zoom` zooms the overlay itself.
+agtermctl surface zoom toggle --target "surface:$sid:left"
 
 # Read the current zoom back (the zoomed surface's control id; null when nothing is zoomed).
 agtermctl tree --json | jq -r '.result.tree.zoomedSurface'
@@ -1034,7 +1048,8 @@ agtermctl session hud "gathering options…" --spinner --position bottom-right \
 ```
 
 The stable pane ID wins when it resolves. `--pane` is the fallback for older or unknown IDs. The selected
-pane supplies the size, 80% cap, anchor, and 10% edge margin. A hidden pane keeps its HUD and shows it again
+pane supplies the size, 80% cap, anchor, and 10% edge margin; `--sticky` drops the margin and, off center,
+lifts the WIDTH cap to 100. A hidden pane keeps its HUD and shows it again
 when restored; closing the pane closes its HUD.
 
 `session hud update` repaints in place, no re-spawn and no blink, and it replaces the whole spec: `--detail`,

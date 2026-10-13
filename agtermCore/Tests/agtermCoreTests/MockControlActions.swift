@@ -35,15 +35,16 @@ final class MockControlActions: ControlActions {
         case markSessionSeen(target: String?, window: String?)
         case sessionStatus(target: String?, window: String?, ControlSessionStatusUpdate)
         case sessionRestore(target: String?, window: String?, ControlSessionRestoreUpdate)
+        case sessionRestart(target: String?, window: String?, ControlSessionRestartOptions)
         case sessionSplit(target: String?, window: String?, String?, SplitAxis?)
         case sessionSplitClose(target: String?, window: String?)
         case sessionSwap(target: String?, window: String?)
         case sessionLead(target: String?, window: String?, pane: StatusPane?)
-        case sessionScratch(target: String?, window: String?, String?, command: String?)
+        case sessionScratch(target: String?, window: String?, String?, command: String?, follow: Bool)
         case sessionFocus(target: String?, window: String?, String?)
         case sessionResize(target: String?, window: String?, ControlSplitResize)
         case surfaceZoom(target: String?, window: String?, ControlToggleMode)
-        case surfaceCursor(target: String?, window: String?)
+        case surfaceCursor(target: String?, window: String?, paneID: String? = nil)
         case dashboard(targets: [String], window: String?, close: Bool, fontMode: DashboardFontMode, mru: Bool)
         case font(target: String?, window: String?, pane: StatusPane?, String)
         case keymapReload
@@ -52,6 +53,7 @@ final class MockControlActions: ControlActions {
         case hooksReload
         case hooksList
         case browserClear
+        case browserLinks(LinkOpenMode?)
         case version
         case configReload
         case notify(target: String?, window: String?, title: String?, body: String)
@@ -146,6 +148,7 @@ final class MockControlActions: ControlActions {
     var nextKeymapListResponse = ControlResponse(ok: true)
     var nextHooksReloadResponse = ControlResponse(ok: true)
     var nextBrowserClearResponse = ControlResponse(ok: true)
+    var nextBrowserLinksResponse = ControlResponse(ok: true)
     var nextHooksListResponse = ControlResponse(ok: true)
     var nextVersionResponse = ControlResponse(ok: true)
     var nextKeymapResponse = ControlResponse(ok: true)
@@ -203,6 +206,7 @@ final class MockControlActions: ControlActions {
     var nextRestoreCaptureResponse = ControlResponse(ok: true)
     var nextSessionRestoreResponse = ControlResponse(ok: true)
     var nextSessionSwapResponse = ControlResponse(ok: true)
+    var nextSessionRestartResponse = ControlResponse(ok: true)
 
     func controlTree(window: String?) -> ControlResponse {
         calls.append(.tree(window: window))
@@ -345,6 +349,12 @@ final class MockControlActions: ControlActions {
         return nextSessionRestoreResponse
     }
 
+    func restartSessionPane(_ target: String?, window: String?,
+                            options: ControlSessionRestartOptions) async -> ControlResponse {
+        calls.append(.sessionRestart(target: target, window: window, options))
+        return nextSessionRestartResponse
+    }
+
     func splitSession(_ target: String?, window: String?, mode: String?) -> ControlResponse {
         splitSession(target, window: window, mode: mode, axis: nil)
     }
@@ -371,7 +381,12 @@ final class MockControlActions: ControlActions {
 
     func scratchSession(_ target: String?, window: String?, mode: String?,
                         command: String?) -> ControlResponse {
-        calls.append(.sessionScratch(target: target, window: window, mode, command: command))
+        scratchSession(target, window: window, mode: mode, command: command, follow: false)
+    }
+
+    func scratchSession(_ target: String?, window: String?, mode: String?, command: String?,
+                        follow: Bool) -> ControlResponse {
+        calls.append(.sessionScratch(target: target, window: window, mode, command: command, follow: follow))
         return ControlResponse(ok: true)
     }
 
@@ -391,7 +406,11 @@ final class MockControlActions: ControlActions {
     }
 
     func readSurfaceCursor(_ target: String?, window: String?) -> ControlResponse {
-        calls.append(.surfaceCursor(target: target, window: window))
+        readSurfaceCursor(target, window: window, paneID: nil)
+    }
+
+    func readSurfaceCursor(_ target: String?, window: String?, paneID: String?) -> ControlResponse {
+        calls.append(.surfaceCursor(target: target, window: window, paneID: paneID))
         return nextSurfaceCursorResponse
     }
 
@@ -434,6 +453,11 @@ final class MockControlActions: ControlActions {
     func clearBrowser() async -> ControlResponse {
         calls.append(.browserClear)
         return nextBrowserClearResponse
+    }
+
+    func linkOpenMode(_ mode: LinkOpenMode?) -> ControlResponse {
+        calls.append(.browserLinks(mode))
+        return nextBrowserLinksResponse
     }
 
     func appIdentity() -> ControlResponse {

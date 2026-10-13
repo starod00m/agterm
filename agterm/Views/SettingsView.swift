@@ -72,10 +72,10 @@ private struct SettingHint: View {
     }
 }
 
-/// General tab: Mouse (scroll speed, right-click-pastes, workspace-row click), Sessions (new-session
-/// directory, restore mode, and the flagged view layout, here because the Interface tab is full) and the
-/// inherit-global-ghostty-config toggle; visual and
-/// notification settings have their own tabs.
+/// General tab: Mouse (scroll speed, right-click-pastes, link opening, workspace-row click) and Sessions
+/// (new-session directory, restore mode, the flagged view layout, here because the Interface tab is full,
+/// and the inherit-global-ghostty-config toggle, here because a section of its own made the tab scroll);
+/// visual and notification settings have their own tabs.
 private struct GeneralSettingsView: View {
     let model: SettingsModel
 
@@ -92,6 +92,11 @@ private struct GeneralSettingsView: View {
                 }
                 Toggle("Right-click pastes", isOn: rightClickPaste)
                     .accessibilityIdentifier("settings-right-click-paste")
+                Picker("Open links in", selection: linkOpenMode) {
+                    Text("Browser").tag(LinkOpenMode.browser)
+                    Text("Session overlay").tag(LinkOpenMode.overlay)
+                }
+                .accessibilityIdentifier("settings-link-open-mode")
                 Toggle("Click a workspace row to expand or collapse", isOn: workspaceRowClickExpands)
                     .accessibilityIdentifier("settings-workspace-row-click-expands")
             }
@@ -140,15 +145,13 @@ private struct GeneralSettingsView: View {
                     .accessibilityIdentifier("settings-close-grace-undo")
                 Picker("Flagged view layout", selection: flaggedViewLayout) {
                     Text("Flat list").tag(FlaggedViewLayout.flat)
+                    Text("Flat list, names only").tag(FlaggedViewLayout.plain)
                     Text("Workspace tree").tag(FlaggedViewLayout.tree)
                 }
                 .accessibilityIdentifier("settings-flagged-view-layout")
-            }
-
-            Section("Ghostty Config") {
                 Toggle("Use my global Ghostty config", isOn: inheritGlobalGhosttyConfig)
                     .accessibilityIdentifier("settings-inherit-global-ghostty")
-                SettingHint("Also loads ~/.config/ghostty/config on top of agterm's own. Edit ~/.config/agterm/ghostty.conf to customize.")
+                SettingHint("Also loads ~/.config/ghostty/config.")
             }
         }
         .formStyle(.grouped)
@@ -179,6 +182,11 @@ private struct GeneralSettingsView: View {
     private var rightClickPaste: Binding<Bool> {
         Binding(get: { model.settings.rightClickPaste ?? true },
                 set: { model.setRightClickPaste($0 ? nil : false) })
+    }
+
+    private var linkOpenMode: Binding<LinkOpenMode> {
+        Binding(get: { model.settings.effectiveLinkOpenMode },
+                set: { model.setLinkOpenMode($0) })
     }
 
     private var flaggedViewLayout: Binding<FlaggedViewLayout> {
@@ -818,6 +826,7 @@ private struct AgentStatusSettingsView: View {
 /// keymap and posts the change, updating the menu shortcuts, custom-command runner and action palette.
 private struct KeyMappingSettingsView: View {
     let model: SettingsModel
+    @State private var enabledInputSources = TerminalInputSource.enabledSources()
 
     /// configDirectoryPath is the directory shown in the field, matching `SettingsModel`'s own resolution.
     private var configDirectoryPath: String {
@@ -830,6 +839,21 @@ private struct KeyMappingSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Keyboard Layout") {
+                Picker("Lock in terminals", selection: terminalInputSource) {
+                    Text("Off").tag(String?.none)
+                    ForEach(inputSources, id: \.id) { source in
+                        Text(source.name).tag(String?.some(source.id))
+                    }
+                }
+                .accessibilityIdentifier("settings-terminal-input-source")
+                .onAppear { enabledInputSources = TerminalInputSource.enabledSources() }
+                // enabling a source means a trip to System Settings and back, so activation is the reload.
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    enabledInputSources = TerminalInputSource.enabledSources()
+                }
+            }
+
             Section("Config Directory") {
                 HStack {
                     Text(configDirectoryPath)
@@ -901,6 +925,21 @@ private struct KeyMappingSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    /// inputSources is what macOS can select, plus a saved source it no longer can, so the picker still
+    /// shows the stored choice.
+    private var inputSources: [KeyboardInputSource] {
+        let enabled = enabledInputSources
+        guard let saved = model.settings.terminalInputSource, !enabled.contains(where: { $0.id == saved }) else {
+            return enabled
+        }
+        return enabled + [KeyboardInputSource(id: saved, name: "\(saved) (unavailable)")]
+    }
+
+    private var terminalInputSource: Binding<String?> {
+        Binding(get: { model.settings.terminalInputSource },
+                set: { model.setTerminalInputSource($0) })
     }
 
     private var hooksDiagnosticsSummary: String {

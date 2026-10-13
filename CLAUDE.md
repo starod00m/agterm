@@ -123,11 +123,25 @@ C-boundary concurrency before changing the bridge.
   changing the main checkout's branch. Squash/rebase makes removal report unmerged commits; after
   verification, discard the worktree safely. Native removal may leave a renamed branch, which must be
   deleted separately after checking the remote.
+- Never `git worktree remove` the directory a live session sits in: agterm spawns custom commands in the
+  session's directory, so every leader command then fails to spawn. When ExitWorktree reports no active
+  session, leave the removal to a session started in the main checkout.
+- Before removing a worktree, and after any hosted or UI test run, run
+  `lsappinfo list | grep -A4 agterm.debug`.
+  An entry marked `exited-with-subordinates` that lists `relatedCoalitionPIDs` is held by those pids:
+  identify them with `ps -p`, stop the ones that are leaked test processes, and report anything else to
+  Eugene.
+  An entry without `relatedCoalitionPIDs` right after a run can be transient; check again after a minute
+  before acting, and report it to Eugene if it persists.
 - Debug Swift code lives in `agterm.debug.dylib`; inspect it or object files, not the stub executable.
 - For throwaway launch-time probes, append to a temp file. `NSLog` from `open -n` is unreliable; production
   logging uses `os.Logger`.
 - `scripts/run.sh` activates an existing instance instead of loading a rebuild. Use a distinct isolated
   launch for current code.
+- Stop an isolated Live-mode Debug instance and its daemons before rebuilding the same DerivedData.
+  Rewriting the bundle's `zmx` or `agterm-session-host` under running daemons can trigger
+  `SIGKILL (Code Signature Invalid)`; the reports go to `~/Library/Logs/DiagnosticReports/`.
+  Foreground programs can survive without a tty; stop any survivors by pid.
 - `make deploy` copies Release to `~/Applications`, whose app, PATH CLI, and installed hooks shadow Debug.
   Test fresh CLI/hooks with the Debug binary or redeploy and reinstall them. Debug uses
   `com.umputun.agterm.debug`, distinct from Release.

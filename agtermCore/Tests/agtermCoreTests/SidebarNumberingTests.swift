@@ -100,7 +100,8 @@ struct SidebarNumberingTests {
         #expect(thirdFlagged.map { SidebarNumbering.position(ofSession: $0.id, in: store, flaggedLayout: .tree) } == [1, 2])
     }
 
-    @Test func flatFlaggedNumbersSessionsAcrossWorkspacesAndNoWorkspaceRow() throws {
+    @Test(arguments: [FlaggedViewLayout.flat, .plain])
+    func listFlaggedLayoutsNumberSessionsAcrossWorkspacesAndNoWorkspaceRow(layout: FlaggedViewLayout) throws {
         let store = makeStore()
         let first = store.addWorkspace(name: "first")
         let second = store.addWorkspace(name: "second")
@@ -110,10 +111,10 @@ struct SidebarNumberingTests {
         for session in [firstFlagged] + secondFlagged { session.flagged = true }
         store.setSidebarMode(.flagged)
 
-        #expect([first, second].map { SidebarNumbering.position(ofWorkspace: $0.id, in: store, flaggedLayout: .flat) } == [nil, nil])
-        #expect(SidebarNumbering.position(ofSession: plain.id, in: store, flaggedLayout: .flat) == nil)
-        #expect(SidebarNumbering.position(ofSession: firstFlagged.id, in: store, flaggedLayout: .flat) == 1)
-        let positions = secondFlagged.map { SidebarNumbering.position(ofSession: $0.id, in: store, flaggedLayout: .flat) }
+        #expect([first, second].map { SidebarNumbering.position(ofWorkspace: $0.id, in: store, flaggedLayout: layout) } == [nil, nil])
+        #expect(SidebarNumbering.position(ofSession: plain.id, in: store, flaggedLayout: layout) == nil)
+        #expect(SidebarNumbering.position(ofSession: firstFlagged.id, in: store, flaggedLayout: layout) == 1)
+        let positions = secondFlagged.map { SidebarNumbering.position(ofSession: $0.id, in: store, flaggedLayout: layout) }
         #expect(positions == Array(2 ... 11))
         #expect(positions.suffix(2).map { SidebarNumbering.symbolName(forPosition: $0) } == ["0.circle", "circle.dashed"])
         #expect(SidebarNumbering.symbolName(forPosition: nil) == "circle.dashed")

@@ -514,6 +514,31 @@ struct AppSettingsTests {
         #expect(legacy.effectiveFlaggedViewLayout == .flat)
     }
 
+    @Test func terminalInputSourceDefaultsOffRoundTripsAndIsNotAGhosttyKey() throws {
+        #expect(AppSettings().terminalInputSource == nil)
+        let settings = AppSettings(terminalInputSource: "com.apple.keylayout.US")
+        #expect(settings.ghosttyConfigLines() == AppSettings().ghosttyConfigLines())
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.terminalInputSource == "com.apple.keylayout.US")
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data(#"{ "fontSize": 16 }"#.utf8))
+        #expect(legacy.terminalInputSource == nil)
+    }
+
+    @Test func linkOpenModeDefaultsToBrowserResolvesTolerantlyAndIsNotAGhosttyKey() throws {
+        #expect(AppSettings().effectiveLinkOpenMode == .browser)
+        #expect(AppSettings(linkOpenMode: "overlay").ghosttyConfigLines() == AppSettings().ghosttyConfigLines())
+        for mode in LinkOpenMode.allCases {
+            let settings = AppSettings(linkOpenMode: mode.rawValue)
+            let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            #expect(decoded.linkOpenMode == mode.rawValue)
+            #expect(decoded.effectiveLinkOpenMode == mode)
+        }
+        #expect(AppSettings(linkOpenMode: "tab").effectiveLinkOpenMode == .browser)
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data(#"{ "fontSize": 16 }"#.utf8))
+        #expect(legacy.linkOpenMode == nil)
+        #expect(legacy.effectiveLinkOpenMode == .browser)
+    }
+
     @Test func htmlOverlayZoomDefaultsToActualSizeRoundTripsAndIsNotAGhosttyKey() throws {
         #expect(AppSettings().effectiveHtmlOverlayZoom == 1)
         #expect(AppSettings(htmlOverlayZoom: 1.5).ghosttyConfigLines() == AppSettings().ghosttyConfigLines())

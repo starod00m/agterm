@@ -43,6 +43,10 @@ public protocol ControlActions {
     /// unresolvable `paneID` given without an explicit `pane`).
     func setSessionRestore(_ target: String?, window: String?,
                            update: ControlSessionRestoreUpdate) -> ControlResponse
+    /// restartSessionPane replaces one live pane's shell with a new one running `options.command`, keeping
+    /// the pane and its stable id. The default below keeps existing hosts source-compatible.
+    func restartSessionPane(_ target: String?, window: String?,
+                            options: ControlSessionRestartOptions) async -> ControlResponse
     /// Source-compatible axis-agnostic entry point retained for existing conformers and callers.
     func splitSession(_ target: String?, window: String?, mode: String?) -> ControlResponse
     /// Axis-aware entry point. Its default delegates to the original method so an existing conformer does
@@ -58,12 +62,18 @@ public protocol ControlActions {
     /// default below keeps existing hosts source-compatible.
     func takeSessionLead(_ target: String?, window: String?, pane: StatusPane?) -> ControlResponse
     func scratchSession(_ target: String?, window: String?, mode: String?, command: String?) -> ControlResponse
+    /// Selection-aware entry point: `follow` selects the target when showing its scratch. Its default
+    /// delegates to the original method so an existing conformer keeps its own selection behavior.
+    func scratchSession(_ target: String?, window: String?, mode: String?, command: String?,
+                        follow: Bool) -> ControlResponse
     func focusSessionPane(_ target: String?, window: String?, pane: String?) -> ControlResponse
     func resizeSplit(_ target: String?, window: String?, resize: ControlSplitResize) -> ControlResponse
     func setSurfaceZoom(_ target: String?, window: String?, mode: ControlToggleMode) -> ControlResponse
     /// The addressed surface's cursor column. Takes `surface.zoom`'s target vocabulary, `quick` included,
     /// because it addresses the same set of surfaces; unlike zoom it is a pure read and changes nothing.
     func readSurfaceCursor(_ target: String?, window: String?) -> ControlResponse
+    /// readSurfaceCursor with a non-empty `paneID` takes a session target; the token picks the pane.
+    func readSurfaceCursor(_ target: String?, window: String?, paneID: String?) -> ControlResponse
     func setDashboard(targets: [String], window: String?, close: Bool,
                       fontMode: DashboardFontMode, mru: Bool) -> ControlResponse
     func font(_ target: String?, window: String?, pane: StatusPane?, action: String) -> ControlResponse
@@ -77,6 +87,9 @@ public protocol ControlActions {
     func listHooks() -> ControlResponse
     /// `browser.clear` empties the saved browser store; the reply waits for the removal to finish.
     func clearBrowser() async -> ControlResponse
+    /// `browser.links` sets where a clicked web link opens, or with nil only reads it; the reply's text is
+    /// the effective mode either way.
+    func linkOpenMode(_ mode: LinkOpenMode?) -> ControlResponse
     func appIdentity() -> ControlResponse
     func reloadGhosttyConfig() -> ControlResponse
     func sendNotification(_ target: String?, window: String?, title: String?, body: String) -> ControlResponse
@@ -213,6 +226,8 @@ public struct ControlDispatcher {
                 .sessionReveal, .sessionMove, .sessionFlag, .sessionContext, .sessionSeen, .sessionStatus,
                 .sessionRestore:
             return await dispatchSessionCommand(request)
+        case .sessionRestart:
+            return await dispatchSessionRestart(request)
         case .sessionSplit, .sessionSplitClose, .sessionSwap, .sessionLead, .sessionScratch, .sessionFocus,
                 .sessionResize, .surfaceZoom, .surfaceCursor, .sessionType,
                 .sessionCopy, .sessionPaste, .sessionSelectAll, .sessionSearch, .sessionOverlayOpen,
@@ -233,7 +248,7 @@ public struct ControlDispatcher {
             return await dispatchZmxCommand(request)
         case .hooksReload, .hooksList:
             return dispatchHooksCommand(request)
-        case .browserClear:
+        case .browserClear, .browserLinks:
             return await dispatchBrowserCommand(request)
         case .quickType, .quickText:
             return await dispatchQuickCommand(request)
@@ -469,6 +484,40 @@ public struct ControlDispatcher {
         return actions.setSessionRestore(request.target, window: args?.window, update: update)
     }
 
+    /// `session.restart`: the line is a shell line and is never rewritten; an absent one asks the host to
+    /// replay the pane's foreground program. A pane must be named, by token or by role, because a default
+    /// would restart a shell the caller never addressed.
+    private func dispatchSessionRestart(_ request: ControlRequest) async -> ControlResponse {
+        let args = request.args
+        let command = args?.command
+        if let command {
+            guard !command.trimmingCharacters(in: .whitespaces).isEmpty else {
+                return ControlResponse(ok: false, error: "session.restart takes a non-empty command, or none to replay")
+            }
+            guard !CommandRestore.hasControlCharacter(command) else {
+                return ControlResponse(ok: false, error: "command must not contain control characters")
+            }
+            guard command.utf8.count <= ControlSessionRestartOptions.maxCommandBytes else {
+                return ControlResponse(ok: false, error: "command too long (max "
+                    + "\(ControlSessionRestartOptions.maxCommandBytes) bytes)")
+            }
+        }
+        let pane: StatusPane?
+        switch parsePane(args?.pane) {
+        case .pane(let parsed): pane = parsed
+        case .rejected(let rejection): return rejection
+        }
+        guard pane != .scratch else {
+            return ControlResponse(ok: false, error: "session.restart does not address the scratch pane")
+        }
+        let paneID = args?.paneID.flatMap { $0.isEmpty ? nil : $0 }
+        guard pane != nil || paneID != nil else {
+            return ControlResponse(ok: false, error: "session.restart requires --pane-id or --pane")
+        }
+        return await actions.restartSessionPane(request.target, window: args?.window, options: .init(
+            command: command, pane: pane, paneID: paneID))
+    }
+
     /// `session.context`: `set` takes `text`, `clear` takes none. An invalid value is REJECTED, never
     /// normalized, so `clear` stays the only route to nil and a refused call leaves the previous context
     /// standing. The mode is required rather than inferred from `text`, which is what makes "both" and
@@ -591,7 +640,7 @@ public struct ControlDispatcher {
             }
         case .sessionScratch:
             return actions.scratchSession(request.target, window: request.args?.window, mode: request.args?.mode,
-                                          command: request.args?.command)
+                                          command: request.args?.command, follow: request.args?.follow == true)
         case .sessionFocus:
             return actions.focusSessionPane(request.target, window: request.args?.window, pane: request.args?.pane)
         case .sessionResize:
@@ -611,7 +660,8 @@ public struct ControlDispatcher {
             }
             return actions.setSurfaceZoom(request.target, window: request.args?.window, mode: mode)
         case .surfaceCursor:
-            return actions.readSurfaceCursor(request.target, window: request.args?.window)
+            return actions.readSurfaceCursor(request.target, window: request.args?.window,
+                                             paneID: request.args?.paneID)
         case .sessionType:
             guard let text = request.args?.text else {
                 return ControlResponse(ok: false, error: "session.type requires text")
@@ -626,7 +676,8 @@ public struct ControlDispatcher {
                                              options: ControlSessionTypeOptions(
                                                 text: text,
                                                 select: request.args?.select ?? false,
-                                                pane: pane
+                                                pane: pane,
+                                                paneID: request.args?.paneID
                                              ))
         case .sessionCopy:
             return actions.copySessionSelection(request.target, window: request.args?.window)
@@ -902,55 +953,5 @@ public struct ControlDispatcher {
         default:
             preconditionFailure("unexpected window command: \(request.cmd.rawValue)")
         }
-    }
-
-    /// The dashboard overlay is host-free-validated here: an open needs at least one id (or `--mru`) and at
-    /// most one font flag, `--close` takes no id/`--mru`/font flag, a `--font-size` must be finite and
-    /// positive, `--mru` cannot be combined with explicit ids (but composes with the font flags), and every
-    /// id parses as a `DashboardTarget` — a malformed pane suffix fails the whole command here, while a
-    /// well-formed ref naming no live pane is an app-side miss.
-    /// The 9-cell cap is NOT applied here — the cell unit is a session+pane, so a split session expands to
-    /// two cells and the cap counts PANES, which needs the store. That expansion + cap, the dropped-pane
-    /// report, target resolution (incl. the `--mru` recency lookup), the surface reparent, and the
-    /// per-window controller all live app-side behind `ControlActions.setDashboard`
-    /// (`ControlServer.setDashboard`); this forwards the ids as raw strings once their grammar is checked.
-    private func dispatchDashboard(_ request: ControlRequest) -> ControlResponse {
-        let args = request.args
-        let targets = args?.targets ?? []
-        let fontSize = args?.fontSize
-        let autoSize = args?.autoSize ?? false
-        let mru = args?.mru ?? false
-
-        if args?.close == true {
-            guard targets.isEmpty, !mru, fontSize == nil, !autoSize else {
-                return ControlResponse(ok: false, error: "dashboard --close takes no ids, --mru, or font options")
-            }
-            return actions.setDashboard(targets: [], window: args?.window, close: true, fontMode: .untouched, mru: false)
-        }
-
-        if fontSize != nil, autoSize {
-            return ControlResponse(ok: false, error: "dashboard: --font-size is mutually exclusive with --auto-size")
-        }
-        if let fontSize, !fontSize.isFinite || fontSize <= 0 {
-            return ControlResponse(ok: false, error: "dashboard --font-size must be a positive number")
-        }
-        let fontMode: DashboardFontMode = autoSize ? .auto : (fontSize.map(DashboardFontMode.fixed) ?? .untouched)
-        if mru {
-            guard targets.isEmpty else {
-                return ControlResponse(ok: false, error: "dashboard --mru cannot be combined with explicit session ids")
-            }
-            return actions.setDashboard(targets: [], window: args?.window, close: false, fontMode: fontMode, mru: true)
-        }
-        guard !targets.isEmpty else {
-            return ControlResponse(ok: false, error: "dashboard requires at least one session id")
-        }
-        // grammar only: a malformed pane suffix fails the command here, while a well-formed ref that
-        // resolves to nothing is app-side and joins the `unresolved` note instead.
-        if let malformed = targets.first(where: { DashboardTarget(rawValue: $0) == nil }) {
-            return ControlResponse(
-                ok: false,
-                error: "dashboard: invalid session id '\(malformed)' — use <id>, <id>:left, or <id>:right")
-        }
-        return actions.setDashboard(targets: targets, window: args?.window, close: false, fontMode: fontMode, mru: false)
     }
 }

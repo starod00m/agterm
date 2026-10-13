@@ -27,6 +27,7 @@ public enum Command: String, Codable, Sendable {
     case sessionContext = "session.context"
     case sessionSeen = "session.seen"
     case sessionRestore = "session.restore"
+    case sessionRestart = "session.restart"
     case sessionBackground = "session.background"
     case sessionSplit = "session.split"
     case sessionSplitClose = "session.split.close"
@@ -86,6 +87,7 @@ public enum Command: String, Codable, Sendable {
     case hooksReload = "hooks.reload"
     case hooksList = "hooks.list"
     case browserClear = "browser.clear"
+    case browserLinks = "browser.links"
     case configReload = "config.reload"
     case themeSet = "theme.set"
     case themeList = "theme.list"
@@ -162,7 +164,7 @@ public struct ControlArgs: Codable, Sendable, Equatable {
     public var select: Bool?
     /// Mode for `session.split` (`on|off|toggle`), `quick`/`surface.zoom` (`show|hide|toggle`),
     /// `session.flag` (`on|off|toggle|clear`), `sidebar.mode` (`tree|flagged|toggle`),
-    /// `sidebar.flagged-layout` (`flat|tree|toggle`),
+    /// `sidebar.flagged-layout` (`flat|plain|tree|toggle`),
     /// `workspace.focus` (`on|off|toggle|add`), `workspace.filter`/`window.minimize` (`on|off|toggle`),
     /// `session.background` (`image|text|color|clear`), `session.restore` (`set|none|clear` — pin
     /// `command`, pin nothing, or drop the pin), and `session.context` (`set|clear`).
@@ -217,12 +219,9 @@ public struct ControlArgs: Codable, Sendable, Equatable {
     /// unaffected. A pane overlay is always full-pane, so
     /// `--pane` conflicts with `session.overlay.open --size-percent` and `session.overlay.resize` refuses it.
     public var pane: String?
-    /// A surface's STABLE spawn token for `session.status`/`session.restore`/`session.text`/`session.hud.*`
-    /// (the shell's baked `AGTERM_PANE_ID`, forwarded by the agent-status hook). Resolving it against the session's
-    /// live surfaces OVERRIDES the stale role `pane`, so a call from a moved pane reaches the CURRENT slot;
-    /// empty/unknown falls back to `pane`. Opaque — validated only by resolving.
-    /// `session.restore` and `session.hud.*` diverge: an unresolvable token with NO explicit `pane` errors
-    /// rather than silently choosing session-wide or main placement. See `Session.paneRole(forToken:)`, #199.
+    /// paneID is the stable `AGTERM_PANE_ID` token; a known id overrides `pane` and an empty one counts as
+    /// absent. An unknown id needs an explicit `pane` to fall back on, except for `session.status`, which
+    /// always falls back, and `surface.cursor`, which never does.
     public var paneID: String?
     /// Absolute primary-pane split fraction (0...1) of the pane area below the titlebar band, for
     /// `session.resize`, clamped server-side to `AppStore.splitRatioMin...splitRatioMax`. Mutually exclusive
@@ -274,8 +273,8 @@ public struct ControlArgs: Codable, Sendable, Equatable {
     /// For `session.overlay.resize`, requests the full-pane (translucent, session-hidden) overlay — the way
     /// to switch a floating overlay back to full. Mutually exclusive with `sizePercent`.
     public var full: Bool?
-    /// For `session.overlay.open`, whether to select the target after opening; omitted/false opens in the
-    /// background without changing the active session (the default for full and floating overlays alike).
+    /// Whether `session.overlay.open` and a showing `session.scratch` select their target; omitted/false
+    /// leaves the active session alone. For `pick.open` and `ask.open` it raises the owning window instead.
     public var follow: Bool?
     /// The HUD panel's headline for `session.hud.open`/`.update` — required and non-empty on both, since an
     /// update with nothing to say is a close. Wrapped app-side; control characters are rejected.
@@ -299,6 +298,12 @@ public struct ControlArgs: Codable, Sendable, Equatable {
     /// markdown renders the HUD message as markdown for `session.hud.open`/`.update`; nil/omitted is plain.
     /// An update omitting it returns the panel to plain text, the whole spec being replaced.
     public var markdown: Bool?
+    /// sticky puts a HUD flush against the edge or corner its `position` names, for `session.hud.open`/
+    /// `.update`; nil/omitted keeps the edge margin.
+    public var sticky: Bool?
+    /// frame false drops a HUD's border, rounding and blank rows, for `session.hud.open`/`.update`;
+    /// nil/omitted is framed.
+    public var frame: Bool?
     /// The finished caller-provided choices for `pick.open`.
     public var items: [ControlPickItem]?
     /// Optional placeholder text for `pick.open`'s query field.
@@ -382,6 +387,8 @@ public struct ControlArgs: Codable, Sendable, Equatable {
     public var chromeless: Bool?
     /// persistent opens a `--url` page on the saved browser store (`--persistent`) instead of an in-memory one.
     public var persistent: Bool?
+    /// browse lets a `--url` page's main frame leave its first origin for any HTTP(S) site (`--browse`).
+    public var browse: Bool?
     /// value is the answer `session.overlay.submit` hands back from a page; empty is a real answer.
     public var value: String?
     /// page is the page id `session.overlay.result` reads the outcome of, instead of a program's exit status.
@@ -395,7 +402,7 @@ public struct ControlArgs: Codable, Sendable, Equatable {
                 text: String? = nil, select: Bool? = nil, mode: String? = nil, axis: String? = nil,
                 command: String? = nil, wait: Bool? = nil, sizePercent: Int? = nil, full: Bool? = nil,
                 follow: Bool? = nil, message: String? = nil, detail: String? = nil, spinner: String? = nil,
-                hideAfter: Double? = nil, markdown: Bool? = nil,
+                hideAfter: Double? = nil, markdown: Bool? = nil, sticky: Bool? = nil, frame: Bool? = nil,
                 items: [ControlPickItem]? = nil, prompt: String? = nil,
                 query: String? = nil, allowCustom: Bool? = nil, selection: String? = nil,
                 buttons: [ControlAskButton]? = nil, defaultButton: String? = nil,
@@ -414,7 +421,7 @@ public struct ControlArgs: Codable, Sendable, Equatable {
                 close: Bool? = nil, fontSize: Double? = nil, autoSize: Bool? = nil, mru: Bool? = nil,
                 html: String? = nil, current: Bool? = nil, navigation: Bool? = nil, url: String? = nil,
                 javascript: Bool? = nil, value: String? = nil, page: String? = nil, chromeless: Bool? = nil,
-                persistent: Bool? = nil) {
+                persistent: Bool? = nil, browse: Bool? = nil) {
         self.name = name
         self.cwd = cwd
         self.targets = targets
@@ -440,6 +447,8 @@ public struct ControlArgs: Codable, Sendable, Equatable {
         self.spinner = spinner
         self.hideAfter = hideAfter
         self.markdown = markdown
+        self.sticky = sticky
+        self.frame = frame
         self.items = items
         self.prompt = prompt
         self.query = query
@@ -498,6 +507,7 @@ public struct ControlArgs: Codable, Sendable, Equatable {
         self.page = page
         self.chromeless = chromeless
         self.persistent = persistent
+        self.browse = browse
     }
 }
 
@@ -556,8 +566,8 @@ public struct ControlResult: Codable, Sendable, Equatable {
     /// from. Without the echo a caller cannot tell an out-of-range request from an honored one, both
     /// answering ok.
     public var sidebarWidth: Double?
-    /// pane is the role written by session.restore or the pane anchor resolved by ask.open.
-    /// session.restore reports it on every success, including the default-to-main path.
+    /// pane is the pane session.restore wrote, session.text read or session.type typed into, or the anchor
+    /// ask.open resolved. The first three report it on every success, the default-pane paths included.
     public var pane: String?
     /// The light/dark syncing state for `theme.set`/`theme.list`, from the stored theme: `sync` = whether it
     /// is ghostty's dual `light:,dark:` form (the terminal tracks the macOS appearance), `light`/`dark` its
@@ -579,6 +589,9 @@ public struct ControlResult: Codable, Sendable, Equatable {
     public var cursor: ControlCursor?
     /// The app serving this socket, for `version`. The same value `tree` carries.
     public var app: AppIdentity?
+    /// The build metadata of the bundle on disk, for `version`. Omitted when it cannot be read, which
+    /// means unknown, never "same as `app`".
+    public var installed: AppIdentity?
     /// The restore-mode policy for `restore.mode`, and the header `zmx list` repeats so its rows can be
     /// read without a second call.
     public var restore: ControlRestoreStatus?
@@ -592,6 +605,8 @@ public struct ControlResult: Codable, Sendable, Equatable {
     public var pageID: String?
     /// A page's selector outcome for `session.overlay.result --page`.
     public var pageOutcome: ControlHtmlPageOutcome?
+    /// restart is what `session.restart` replaced: the pane's stable id and its shell before and after.
+    public var restart: ControlRestartReceipt?
 
     public init(id: String? = nil, tree: ControlTree? = nil, text: String? = nil,
                 windows: [ControlWindowNode]? = nil, exitCode: Int? = nil, count: Int? = nil,
@@ -605,7 +620,10 @@ public struct ControlResult: Codable, Sendable, Equatable {
                 zmx: ControlZmxInventory? = nil, remote: ControlRemoteTree? = nil,
                 liveReset: ControlLiveResetStatus? = nil,
                 width: Int? = nil, height: Int? = nil,
-                pageID: String? = nil, pageOutcome: ControlHtmlPageOutcome? = nil) {
+                pageID: String? = nil, pageOutcome: ControlHtmlPageOutcome? = nil,
+                restart: ControlRestartReceipt? = nil, installed: AppIdentity? = nil) {
+        self.restart = restart
+        self.installed = installed
         self.width = width
         self.height = height
         self.restore = restore
@@ -662,7 +680,7 @@ public enum OverlayHudError {
     /// `overlayActive` alone would otherwise answer the misleading "overlay still running".
     public static let noResult = "no overlay result: the slot holds a hud"
     /// A HUD is always floating (`AppStore.openHud`): it must never cover the session it is a message about.
-    /// A percent is accepted but bounded by `HudLayout.clampSizePercent`, which states the same invariant.
+    /// A percent is accepted but bounded by `HudLayout.clampSizePercent(_:for:)`.
     public static let fullResize = "a hud is always floating: pass --size-percent, not --full"
     /// `session.hud.update`/`.close` against a slot that holds no HUD — empty, or running a caller's program.
     public static let noHud = "no hud"
@@ -700,6 +718,7 @@ public enum OverlayHtmlError {
     public static let chromelessWithNavigation = "session.overlay.open: --chromeless cannot be combined with --navigation"
     public static let persistentRequiresURL = "session.overlay.open: --persistent requires --url"
     public static let persistentUnavailable = "persistent browser storage is not available"
+    public static let browseRequiresURL = "session.overlay.open: --browse requires --url"
     /// presenter: a page is shown on this Mac, so it is refused while another Mac presents the session.
     public static let presenter = "a viewer presents this session: an html overlay would open where nobody sees it"
     public static let noOverlay = "no overlay"

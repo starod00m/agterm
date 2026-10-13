@@ -323,16 +323,20 @@ public final class Session: Identifiable {
     /// The percent of the pane an opaque framed panel occupies with the session still VISIBLE behind it; nil
     /// is the full-pane program overlay, which hides it and draws translucent. 1...100 for a floating PROGRAM
     /// overlay, which takes it on BOTH axes and is always centered; a HUD shares the field for its WIDTH
-    /// only, bounded by `HudLayout.clampSizePercent` and placed by its own `HudSpec.position`, and sizes its
-    /// height through `hudHeightPercent`. Cleared on close, never persisted.
+    /// only, bounded by `HudLayout.clampSizePercent(_:for:)` and placed by its own `HudSpec.position`, and
+    /// sizes its height through `hudHeightPoints`. Cleared on close, never persisted.
     public var overlaySizePercent: Int?
 
     /// The percent of the pane's HEIGHT a HUD panel occupies, measured from its message rather than set by
     /// the caller (`HudLayout.heightPercent`); nil for an empty slot and for a program overlay, which takes
     /// `overlaySizePercent` on both axes. A HUD is two or three lines of text, so sharing one percent across
-    /// both axes made every panel as tall as it was wide. Observed — the deck reads it to frame the panel.
-    /// Cleared with the rest of the HUD state, never persisted.
+    /// both axes made every panel as tall as it was wide. The read-back, and what the deck frames with
+    /// when no points were measured. Cleared with the rest of the HUD state, never persisted.
     public var hudHeightPercent: Int?
+
+    /// The height a HUD panel is laid out at, in points and already capped; nil over an unmeasured pane,
+    /// which falls back to `hudHeightPercent`. Cleared with the rest of the HUD state, never persisted.
+    public var hudHeightPoints: Double?
 
     /// hudFontSize is the point size the live HUD's surface was created at: the caller's `HudSpec.fontSize`
     /// or the session's size at open. Measuring reads it, so a session zoom after open cannot change the
@@ -483,6 +487,7 @@ public final class Session: Identifiable {
         hudPaneIdentity = nil
         hudFile = nil
         hudHeightPercent = nil
+        hudHeightPoints = nil
         hudFontSize = nil
         hudExpiresAt = nil
         hudResizedWidthPercent = nil
@@ -493,6 +498,8 @@ public final class Session: Identifiable {
 
     /// What this Mac keeps about a session attached from another one; nil for a local session.
     @ObservationIgnored public internal(set) var remotePresentation: RemotePresentationState?
+    /// remoteConnectionRevision changes with the connection, so an observer of `remoteConnection` is told.
+    var remoteConnectionRevision = 0
 
     /// Tells attached viewers the panel is gone. Set when the HUD is published, so a panel whose body was
     /// never written, and so never published, withdraws nothing.
@@ -501,9 +508,9 @@ public final class Session: Identifiable {
     /// When the app hides the published panel, nil for a persistent one.
     @ObservationIgnored var hudExpiresAt: Date?
 
-    /// The width an `overlay.resize` forced on the published panel, until the next open or update resolves
-    /// the size from its own spec. A viewer sizes from its own pane, so only a forced width travels.
-    @ObservationIgnored var hudResizedWidthPercent: Int?
+    /// The width an `overlay.resize` forced on the panel, until the next open or update resolves the size
+    /// from its own spec. A viewer sizes from its own pane, so only a forced width travels.
+    @ObservationIgnored public internal(set) var hudResizedWidthPercent: Int?
 
     /// Counts publications of the panel. Frame order is what keeps a stale close off a later panel; a
     /// viewer does not read this.
@@ -513,8 +520,8 @@ public final class Session: Identifiable {
     /// that drops a HUD already routes through that one method, which is why the hook hangs there.
     public var onHudDiscarded: (() -> Void)?
 
-    /// onHudGeometryChange tells the app the live HUD panel's measured size changed, so it can rewrite the
-    /// grid in the body header; `discardHudBody` clears it with the rest of the HUD state.
+    /// onHudGeometryChange tells the app the bounds the live HUD is laid out in, or its surface's grid,
+    /// changed, so it can measure the panel again; `discardHudBody` clears it with the rest of the HUD state.
     @ObservationIgnored public var onHudGeometryChange: (() -> Void)?
 
     /// hudActive says the slot holds a passive HUD; the one predicate separating it from the covers.
@@ -559,6 +566,11 @@ public final class Session: Identifiable {
     /// kept alive across hides — non-nil means "alive, maybe hidden". Freed only on `closeScratch` (explicit
     /// close, the shell's own `exit`, or session/workspace/window teardown), after which a show spawns fresh.
     @ObservationIgnored public var scratchSurface: (any TerminalSurface)?
+
+    /// Bumped on every `closeScratch` so the deck keys the scratch view's identity on it. A `--command`
+    /// respawn closes and re-shows inside one store call, so `scratchActive` never dips where SwiftUI can
+    /// see it and the torn-down view would otherwise stay mounted. Observed, never persisted.
+    public var scratchGeneration: Int = 0
 
     /// The scratch analogue of `initialCommand` (`session.scratch --command`). RUN-ONCE: the scratch factory
     /// reads and clears it on spawn, so the next show is a plain shell. Never persisted.
@@ -765,12 +777,13 @@ public final class Session: Identifiable {
     /// that gap holds a view with no libghostty surface and no process. `teardownPaneOverlay` frees that
     /// stillborn view too, since a later open on the pane would otherwise reuse it — it is baked with the
     /// RETIRED overlay's command, cwd, and colors.
-    public func dropUnrealizedPaneOverlays() {
-        for pane in OverlayPane.allCases
-        where paneOverlay(pane) != nil && !paneOverlayIsHtml(pane) && paneOverlaySurface(pane)?.isRealized != true
-            && !paneOverlayHosted(pane) {
-            teardownPaneOverlay(pane)
+    @discardableResult public func dropUnrealizedPaneOverlays() -> Bool {
+        let stranded = OverlayPane.allCases.filter {
+            paneOverlay($0) != nil && !paneOverlayIsHtml($0) && paneOverlaySurface($0)?.isRealized != true
+                && !paneOverlayHosted($0)
         }
+        stranded.forEach { teardownPaneOverlay($0) }
+        return !stranded.isEmpty
     }
 
     /// The pane whose overlay slot CURRENTLY holds `surface`, nil when neither does. Derived LIVE from slot
@@ -841,6 +854,21 @@ public final class Session: Identifiable {
         if splitSurface?.paneToken == token { return .right }
         if scratchSurface?.paneToken == token { return .scratch }
         return nil
+    }
+
+    /// PaneAddress is the outcome of resolving a command's `--pane-id` and `--pane` pair.
+    public enum PaneAddress: Equatable, Sendable {
+        /// pane is nil when neither selector was given and the command's own default applies.
+        case pane(StatusPane?)
+        case unknownToken(String)
+    }
+
+    /// paneAddress resolves `token` against the live slots, then falls back to `pane`. An empty token
+    /// counts as absent; an unknown one with no `pane` beside it is refused.
+    public func paneAddress(token: String?, pane: StatusPane?) -> PaneAddress {
+        guard let token, !token.isEmpty else { return .pane(pane) }
+        guard let resolved = paneRole(forToken: token) ?? pane else { return .unknownToken(token) }
+        return .pane(resolved)
     }
 
     /// Takes the pane's PENDING restore-command override, clearing it so a second surface for the same pane
@@ -967,14 +995,5 @@ public final class Session: Identifiable {
         searchTotal = nil
         searchSelected = nil
         searchSurface = nil
-    }
-}
-
-extension String {
-    /// Trimmed of surrounding whitespace and newlines, nil if empty — the one normalizer for the
-    /// rename/displayName "blank after trim" rule.
-    var trimmedOrNil: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }

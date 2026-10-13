@@ -634,6 +634,11 @@ struct ControlDispatcherTests {
             target: "session",
             args: ControlArgs(mode: "on", command: "htop")
         ))
+        let followed = await dispatcher.dispatch(ControlRequest(
+            cmd: .sessionScratch,
+            target: "session",
+            args: ControlArgs(mode: "on", follow: true)
+        ))
         let focus = await dispatcher.dispatch(ControlRequest(
             cmd: .sessionFocus,
             target: "session",
@@ -648,12 +653,14 @@ struct ControlDispatcherTests {
         #expect(split == ControlResponse(ok: true))
         #expect(splitClose == ControlResponse(ok: true))
         #expect(scratch == ControlResponse(ok: true))
+        #expect(followed == ControlResponse(ok: true))
         #expect(focus == ControlResponse(ok: true))
         #expect(resize == ControlResponse(ok: true))
         #expect(actions.calls == [
             .sessionSplit(target: "session", window: "win", "off", .topBottom),
             .sessionSplitClose(target: "session", window: "win"),
-            .sessionScratch(target: "session", window: nil, "on", command: "htop"),
+            .sessionScratch(target: "session", window: nil, "on", command: "htop", follow: false),
+            .sessionScratch(target: "session", window: nil, "on", command: nil, follow: true),
             .sessionFocus(target: "session", window: nil, "right"),
             .sessionResize(target: "session", window: "win", .delta(-0.1))
         ])
@@ -1520,6 +1527,21 @@ struct ControlDispatcherTests {
         _ = await dispatcher.dispatch(ControlRequest(cmd: .surfaceCursor))
 
         #expect(actions.calls == [.surfaceCursor(target: nil, window: nil)])
+    }
+
+    @Test func surfaceCursorAndSessionTypeForwardThePaneID() async {
+        let actions = MockControlActions()
+        let dispatcher = ControlDispatcher(actions: actions)
+
+        _ = await dispatcher.dispatch(ControlRequest(cmd: .surfaceCursor, target: "s1", args: ControlArgs(paneID: "tok")))
+        _ = await dispatcher.dispatch(ControlRequest(cmd: .sessionType, target: "s1",
+                                                     args: ControlArgs(text: "x", pane: "right", paneID: "tok")))
+
+        #expect(actions.calls == [
+            .surfaceCursor(target: "s1", window: nil, paneID: "tok"),
+            .sessionType(target: "s1", window: nil,
+                         ControlSessionTypeOptions(text: "x", select: false, pane: .right, paneID: "tok")),
+        ])
     }
 
     @Test func dashboardOpenRoutesTargetsWindowAndFixedFontMode() async {

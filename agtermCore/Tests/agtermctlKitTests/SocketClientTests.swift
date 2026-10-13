@@ -320,6 +320,7 @@ struct SocketClientTests {
             custom_command_palette      ctrl+shift+o
             show_attention              ctrl+shift+i
             dashboard                   cmd+shift+g
+            attach_remote               cmd+shift+r
 
         commands:
             Deploy  cmd+shift+y
@@ -1096,6 +1097,21 @@ struct SocketClientTests {
         }
     }
 
+    @Test func formatsInstalledIdentityOnlyWhenItDiffersFromTheRunningOne() {
+        let app = AppIdentity(version: "0.34.0", commit: "a1b2c3d")
+        func format(installed: AppIdentity?) -> String {
+            SocketClient.formatResponse(ControlResponse(ok: true, result: ControlResult(app: app, installed: installed)))
+        }
+
+        #expect(format(installed: nil) == "0.34.0 (a1b2c3d)")
+        #expect(format(installed: app) == "0.34.0 (a1b2c3d)")
+        #expect(format(installed: AppIdentity(version: "0.35.1", commit: "def5678"))
+            == "0.34.0 (a1b2c3d)\ninstalled: 0.35.1 (def5678)")
+        #expect(format(installed: AppIdentity(version: "0.34.0", commit: "def5678"))
+            == "0.34.0 (a1b2c3d)\ninstalled: 0.34.0 (def5678)")
+        #expect(format(installed: AppIdentity(version: "0.35.1")) == "0.34.0 (a1b2c3d)\ninstalled: 0.35.1")
+    }
+
     @Test func versionJSONCarriesTheRawResponseWithoutTheClientPath() throws {
         let line = "{\"ok\": true, \"result\": {\"app\": {\"version\": \"0.24.0\", \"commit\": \"a1b2c3d\\u0020\"}}} "
         let server = StubServer(line: Data(line.utf8))
@@ -1137,6 +1153,7 @@ struct SocketClientTests {
         #expect(error.description.contains("agterm may be stopped or unable to accept connections"))
         // the absent lock file sets errno to ENOENT inside the probe, after the connect error is read
         #expect(error.description.contains("Connection refused"))
+        #expect(error.connectErrno == ECONNREFUSED)
     }
 
     @Test func aMissingSocketWithAHeldOwnershipLockReportsThePresentOwner() throws {
@@ -1158,6 +1175,7 @@ struct SocketClientTests {
         let error = try #require(throws: SocketClientError.self) { _ = try SocketClient(path: path).connect() }
         #expect(error.description.contains("agterm may be stopped or unable to accept connections"))
         #expect(error.description.contains("No such file or directory"))
+        #expect(error.connectErrno == ENOENT)
     }
 
     @Test func probingTheOwnershipLockLeavesItAcquirable() throws {

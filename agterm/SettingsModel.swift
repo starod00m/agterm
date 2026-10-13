@@ -76,6 +76,7 @@ final class SettingsModel {
         applyAutoHideSidebarInactiveWindows()
         applyFlaggedViewLayout()
         applyHtmlOverlayZoom()
+        TerminalInputSource.shared.setTarget(settings.terminalInputSource)
         ensureStarterKeymap()
         loadKeymap()
         ensureStarterHooks()
@@ -266,6 +267,23 @@ final class SettingsModel {
         persistAndApply()
     }
 
+    /// Persist where a clicked web link opens; `browser` is the nil case, keeping `settings.json` minimal. Not a
+    /// ghostty key and nothing renders from it: each click reads the setting.
+    func setLinkOpenMode(_ mode: LinkOpenMode) {
+        guard mode != settings.effectiveLinkOpenMode else { return }
+        settings.linkOpenMode = mode == .browser ? nil : mode.rawValue
+        persistAndApply()
+    }
+
+    /// Persist the keyboard input source held while a terminal has the keyboard, nil for off, and apply it
+    /// to the current focus.
+    func setTerminalInputSource(_ id: String?) {
+        guard id != settings.terminalInputSource else { return }
+        settings.terminalInputSource = id
+        try? settingsStore.save(settings)
+        TerminalInputSource.shared.setTarget(id)
+    }
+
     /// Show or hide one title-bar / sidebar-footer chrome element (an empty result maps back to nil so
     /// `settings.json` stays minimal). Not a ghostty key — it rides `.agtermAppearanceChanged`, so every
     /// window re-gates live. Mutates the RAW string set: `resolvedHiddenInterfaceElements` drops unknown
@@ -442,6 +460,7 @@ final class SettingsModel {
         reloadKeymap()
         reloadHooks()
         reloadGhosttyConfig()
+        remotes.watch(remotesURL)
     }
 
     /// Re-read `hooks.conf` and post `.agtermHooksChanged` so the scheduler applies it; diagnostics surface as
@@ -452,6 +471,14 @@ final class SettingsModel {
         if !hooksDiagnostics.isEmpty {
             NotificationManager.shared.notifyHooksDiagnostics(count: hooksDiagnostics.count)
         }
+    }
+
+    /// remotesURL is the resolved `remotes.conf`, beside `keymap.conf`.
+    var remotesURL: URL { ConfigPaths.remotesPath(configDirectory: configDirectoryURL()) }
+
+    /// remotes follows `remotes.conf` on disk; File ▸ Attach Remote lists its entries.
+    @ObservationIgnored private(set) lazy var remotes = RemotesWatcher(url: remotesURL) {
+        NotificationManager.shared.notifyRemotesDiagnostics(count: $0)
     }
 
     /// The resolved `hooks.conf` path: `<config dir>/hooks.conf`, beside `keymap.conf`.

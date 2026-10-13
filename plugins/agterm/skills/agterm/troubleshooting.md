@@ -258,9 +258,14 @@ prompt itself as an agterm bug.
 Install the hooks from Help ▸ Install Agent Status Hooks…. For shell-integrated agents, start a fresh shell
 so the installer-added `source` line takes effect. For Pi, restart it or run `/reload` so it loads
 `~/.pi/agent/extensions/agterm-status.ts`; the extension installs only after Pi has created `~/.pi/agent`.
-For OpenCode, restart it so it loads `~/.config/opencode/plugins/agterm-status.js`;
-the plugin installs only after OpenCode has created `~/.config/opencode`.
-It serves OpenCode 1.x; OpenCode 2 does not load it, so a restart changes nothing there.
+For OpenCode, restart it to load `~/.config/opencode/plugins/agterm-status.js` (v1) or
+`~/.config/opencode/plugins/agterm-v2/tui.js` (v2).
+The installer detects the major via `opencode --version` in your interactive login shell; failed detection offers a manual choice.
+V1 uses `~/.config/opencode`. V2 uses the shell's `OPENCODE_CONFIG_DIR`, then `$XDG_CONFIG_HOME/opencode`, then `~/.config/opencode`.
+The selected directory must already exist. An empty `OPENCODE_CONFIG_DIR` skips v2 with a warning. So does an unavailable shell configuration when `~/.config/opencode` exists; without that directory OpenCode is skipped as not installed.
+Re-run it after switching major versions: v2 removes the marked v1 plugin in its selected directory; v1 leaves the v2 directory alone.
+User-owned or unreadable v1 files are preserved and reported in the install result.
+The v2 CLI plugin follows the selected session and its descendants, excluding background tabs and headless runs.
 The installed wrapper resolves the bundled `agtermctl` itself; a bare development build instead needs
 `agtermctl` on `PATH`. Moving or replacing agterm.app invalidates the path the installer baked in — the
 wrapper then falls back to `agtermctl` on `PATH`, and with nothing there the glyph silently stops
@@ -282,6 +287,22 @@ lives in, it leaked. Fix a poisoned tmux server without restarting it:
 then restart the affected panes/processes (a respawn is enough; existing processes keep their
 inherited copy). Prevent it: start daemons and session managers with the variables scrubbed
 (`env -u AGTERM_SESSION_ID … <cmd>`, full list in SKILL.md), or from a shell outside agterm.
+
+By default, Codex 0.160.1 CLI sessions share a background app-server daemon, started by the first
+`codex` that needs it, and the same leak follows. The server launches hooks using its inherited
+environment, so every daemon-backed session reports to the session that started the server, or to none
+when the server started outside agterm or that session has closed. Diagnose: run
+`ps eww <pid> | tr ' ' '\n' | grep AGTERM_SESSION_ID` on the app-server process carrying
+`--managed-daemon`. Scrubbing prevents wrong-session updates but does not restore status reporting, and
+agterm has no automatic mapping from the hook payload's Codex session id to the pane displaying it.
+Fix: run `codex --no-daemon`, which keeps the session and its hooks in its own process; that running
+session is unavailable for control through the shared server from the Codex desktop or mobile app.
+To make that the default for plain `codex`, run `codex features disable daemon_auto_start` once, then
+`codex app-server daemon stop`; later plain launches start no shared daemon and report to their own
+session. Disabling auto-start alone still joins a daemon that is already running, and stopping it
+disconnects the CLI sessions attached to it. A daemon-backed conversation can stay locked after its TUI
+exits: if `codex --no-daemon resume <id>` shows "This conversation is open in another app", stop the
+shared daemon and press R to retry.
 
 ### "Claude Code's question/permission prompt is unresponsive after switching apps"
 
