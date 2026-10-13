@@ -100,8 +100,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
         // .agtermAppearanceChanged, like toolbarMode.
         _ = store.workspaces.map {
             ($0.id, $0.name, $0.unseenCount, $0.sessions.map {
-                ($0.id, $0.displayName, $0.hasSplit, $0.splitAxis, $0.unseenCount, $0.agentIndicator, $0.flagged,
-                 $0.remotePresentation?.connection)
+                ($0.id, $0.displayName, $0.unseenCount, $0.agentIndicator, $0.flagged)
             })
         }
         _ = store.selectedSessionID
@@ -187,8 +186,8 @@ struct WorkspaceSidebar: NSViewRepresentable {
         static let workspaceIDUserInfoKey = "agterm.workspaceID"
         static let expandedUserInfoKey = "agterm.expanded"
 
-        /// Last-seen visible content (label, split icon, badge) per session and workspace id, so a
-        /// reconcile reloads only the rows whose content changed. An absent key ≠ any real content.
+        /// Last-seen visible content (label, badge, status, flag, focus membership) per session and workspace
+        /// id, so a reconcile reloads only the rows whose content changed. An absent key ≠ any real content.
         private var lastRowContent: [UUID: RowContent] = [:]
 
         /// The sidebar font size last applied (row height + row fonts). `.agtermAppearanceChanged` fires for
@@ -364,25 +363,22 @@ struct WorkspaceSidebar: NSViewRepresentable {
             let sessionIDs: [UUID]
         }
 
-        /// A row's visible content: label (workspace name or session `displayName`), split-rectangle icon,
-        /// the gated unseen-badge count and the agent-status indicator. A delta reloads just that row, except
-        /// a session's label alone, which its live cell takes in place. Uses `hasSplit` (not `isSplit`) so
-        /// the icon persists while a split is hidden.
+        /// A row's visible content: label (workspace name or session `displayName`), the gated unseen-badge
+        /// count, the agent-status indicator, and the glyph's flag fill and focus brightness. A delta reloads
+        /// just that row, except a session's label alone, which its live cell takes in place. The position is
+        /// not here: positions follow the order `TreeShape` carries, so any change to one takes the rebuild branch.
         private struct RowContent: Equatable {
             var label: String
-            let hasSplit: Bool
-            let splitAxis: SplitAxis
             let unseen: Int
             let indicator: AgentIndicator
-            /// Whether the session is flagged (tree-mode filled-icon variant). A change re-badges just this
-            /// row via `reloadItem`. Always false for workspace rows.
+            /// The glyph's flag fill, from the same predicate the cell builder draws with. Always false for
+            /// workspace rows.
             let flagged: Bool
-            /// Whether the workspace is in the focus set (the black-weight grid icon). MEMBERSHIP only,
-            /// independent of `focusEnabled`, so marking re-renders just that row even while the filter is
-            /// off (with it on the shape changes too and the rebuild branch takes over). False for sessions.
+            /// The glyph's focus brightness for the workspace, or a session's owning workspace, from the same
+            /// predicate the cell builder draws with, so false in flagged modes. MEMBERSHIP only, independent of
+            /// `focusEnabled`, so marking re-renders just those rows' glyphs even while the filter is off (with it
+            /// on the shape changes too and the rebuild branch takes over).
             let focusMember: Bool
-            /// The remote row's stream notice, nil while it is up or for a local row.
-            var presentationNotice: String?
 
             func differsOnlyInLabel(from other: RowContent) -> Bool {
                 var relabeled = self
@@ -406,8 +402,8 @@ struct WorkspaceSidebar: NSViewRepresentable {
         }
 
         /// Decides between a full rebuild (a SHAPE change: add/move/close/reorder) and a targeted per-row
-        /// update (a content change: rename, cwd-driven name, split open/close, badge). A row update during
-        /// an in-progress rename is skipped so a tick can't drop the edit.
+        /// update (a content change: rename, cwd-driven name, badge, status, flag, focus membership). A row
+        /// update during an in-progress rename is skipped so a tick can't drop the edit.
         func reconcile() {
             // a mode or layout flip swaps the whole data source, so rebuild regardless of the shape diff.
             if store.sidebarMode != lastMode || flaggedLayout != lastFlaggedLayout || currentShape() != lastShape {
@@ -417,7 +413,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
             reloadChangedContentRows()
         }
 
-        /// The structural shape for the current mode and layout: the workspace rows `workspaceProjection`
+        /// The structural shape for the current mode and layout: the workspace rows `AppStore.workspaceProjection`
         /// yields, or one flat group of the flagged session ids. A change means an add/remove/move/reorder
         /// (or a flag/unflag in flagged mode) and forces a full rebuild. The ordinary tree derives from
         /// `visibleWorkspaces`, so marking a workspace or flipping the focus filter counts as a shape change too.
@@ -425,7 +421,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
             guard rendersWorkspaceRows else {
                 return [TreeShape(workspaceID: Self.flaggedShapeID, sessionIDs: store.flaggedSessions.map(\.id))]
             }
-            return workspaceProjection.map { TreeShape(workspaceID: $0.workspace.id, sessionIDs: $0.sessions.map(\.id)) }
+            return store.workspaceProjection.map { TreeShape(workspaceID: $0.workspace.id, sessionIDs: $0.sessions.map(\.id)) }
         }
 
         /// Updates only the rows whose visible content changed — the session row and, for a badge roll-up,
@@ -443,9 +439,11 @@ struct WorkspaceSidebar: NSViewRepresentable {
                 outline.reloadItem(node)
             }
             for workspace in store.workspaces {
-                reloadIfChanged(workspace.id, rowContent(forWorkspace: workspace))
+                let content = rowContent(forWorkspace: workspace)
+                reloadIfChanged(workspace.id, content)
                 for session in workspace.sessions {
-                    reloadIfChanged(session.id, rowContent(forSession: session, workspaceName: workspace.name))
+                    reloadIfChanged(session.id, rowContent(forSession: session, workspaceName: workspace.name,
+                                                           focusMember: content.focusMember))
                 }
             }
         }
@@ -466,9 +464,11 @@ struct WorkspaceSidebar: NSViewRepresentable {
         private func snapshotRowContent() {
             var snapshot: [UUID: RowContent] = [:]
             for workspace in store.workspaces {
-                snapshot[workspace.id] = rowContent(forWorkspace: workspace)
+                let content = rowContent(forWorkspace: workspace)
+                snapshot[workspace.id] = content
                 for session in workspace.sessions {
-                    snapshot[session.id] = rowContent(forSession: session, workspaceName: workspace.name)
+                    snapshot[session.id] = rowContent(forSession: session, workspaceName: workspace.name,
+                                                      focusMember: content.focusMember)
                 }
             }
             lastRowContent = snapshot
@@ -477,21 +477,21 @@ struct WorkspaceSidebar: NSViewRepresentable {
         /// The visible content of a workspace row. One builder shared by `reloadChangedContentRows` and
         /// `snapshotRowContent` so the snapshot and the diff can't drift.
         private func rowContent(forWorkspace workspace: Workspace) -> RowContent {
-            RowContent(label: workspace.name, hasSplit: false, splitAxis: .leftRight,
+            RowContent(label: workspace.name,
                        unseen: effectiveUnseen(displayedUnseen(for: workspace)),
                        indicator: AgentIndicator(), flagged: false,
-                       focusMember: store.focusedWorkspaceIDs.contains(workspace.id))
+                       focusMember: SidebarNumbering.isFocusMember(workspace: workspace.id, in: store))
         }
 
         /// The visible content of a session row. One builder shared by `reloadChangedContentRows` and
         /// `snapshotRowContent` so the snapshot and the diff can't drift. Both callers pass the owning
-        /// `workspaceName` in, so the label needs no per-session lookup and the reconcile stays linear.
-        private func rowContent(forSession session: Session, workspaceName: String) -> RowContent {
-            RowContent(label: rowLabel(for: session, workspaceName: workspaceName), hasSplit: session.hasSplit,
-                       splitAxis: session.splitAxis,
+        /// `workspaceName` and its `focusMember` in, so neither needs a per-session lookup and the reconcile
+        /// stays linear.
+        private func rowContent(forSession session: Session, workspaceName: String, focusMember: Bool) -> RowContent {
+            RowContent(label: rowLabel(for: session, workspaceName: workspaceName),
                        unseen: effectiveUnseen(session.unseenCount),
-                       indicator: session.agentIndicator, flagged: session.flagged,
-                       focusMember: false, presentationNotice: presentationNotice(for: session))
+                       indicator: session.agentIndicator, flagged: SidebarNumbering.showsFlag(of: session, in: store),
+                       focusMember: focusMember)
         }
 
         /// Rebuilds `roots` from the store, reusing cached node instances by id so NSOutlineView item
@@ -524,7 +524,7 @@ struct WorkspaceSidebar: NSViewRepresentable {
 
             var seen = Set<UUID>()
             var newRoots: [SidebarNode] = []
-            for (workspace, sessions) in workspaceProjection {
+            for (workspace, sessions) in store.workspaceProjection {
                 let wsNode = node(for: workspace.id, kind: .workspace)
                 seen.insert(workspace.id)
                 wsNode.children = sessions.map { session in
@@ -782,27 +782,26 @@ struct WorkspaceSidebar: NSViewRepresentable {
             return node.kind == .workspace
         }
 
-        /// Leading row icons as monochrome template symbols. A flagged SESSION swaps to its base glyph's
-        /// `.fill` variant (the solid-interior idiom the scratch-active toolbar glyph uses); a workspace in
-        /// the focus SET keeps the same `square.grid.2x2` outline at `.black` weight, so the two markers
-        /// stay distinct (fill = flagged session, black = marked workspace). Never a composited corner
-        /// badge, so each stays a single template `setColors` tints; the weight variant renders 1pt larger
-        /// (16x15 vs 15x14) but the icon view is pinned to 16x16, so neither swap moves the row. Cached.
-        lazy var workspaceIcon = Self.rowIcon("square.grid.2x2")
-        lazy var focusedWorkspaceIcon = Self.rowIcon("square.grid.2x2", weight: .black)
-        lazy var splitSessionIcon = Self.rowIcon("rectangle.split.2x1")
-        lazy var horizontalSplitSessionIcon = Self.rowIcon("rectangle.split.1x2")
-        lazy var sessionIcon = Self.rowIcon("terminal")
-        lazy var flaggedSessionIcon = Self.rowIcon("terminal.fill")
-        lazy var flaggedSplitSessionIcon = Self.rowIcon("rectangle.split.2x1.fill")
-        lazy var flaggedHorizontalSplitSessionIcon = Self.rowIcon("rectangle.split.1x2.fill")
-        lazy var remoteSessionIcon = Self.rowIcon("cloud")
-        lazy var remoteSplitSessionIcon = Self.rowIcon("cloud", weight: .bold)
-        lazy var remoteDisconnectedSessionIcon = Self.rowIcon("icloud.slash")
-        lazy var remoteDisconnectedSplitSessionIcon = Self.rowIcon("icloud.slash", weight: .bold)
+        private struct RowIconKey: Hashable {
+            let name: String
+            let pointSize: CGFloat
+        }
 
-        private static func rowIcon(_ symbolName: String, weight: NSFont.Weight = .regular) -> NSImage? {
-            let config = NSImage.SymbolConfiguration(pointSize: 13, weight: weight)
+        /// Leading row glyphs (`SidebarNumbering` symbols) as monochrome templates `setColors` tints, drawn at
+        /// the sidebar font size.
+        private var rowIcons: [RowIconKey: NSImage] = [:]
+
+        func rowIcon(forPosition position: Int?, flagged: Bool = false) -> NSImage? {
+            let key = RowIconKey(name: SidebarNumbering.symbolName(forPosition: position, flagged: flagged),
+                                 pointSize: GhosttyApp.shared.sidebarFontSize)
+            if let cached = rowIcons[key] { return cached }
+            let image = Self.rowIcon(key.name, pointSize: key.pointSize)
+            rowIcons[key] = image
+            return image
+        }
+
+        private static func rowIcon(_ symbolName: String, pointSize: CGFloat) -> NSImage? {
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
             let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(config)
             image?.isTemplate = true

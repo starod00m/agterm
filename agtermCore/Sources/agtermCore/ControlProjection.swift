@@ -175,8 +175,8 @@ public struct ControlSessionNode: Codable, Sendable, Equatable {
     public let split: Bool
     /// Whether the session HAS a split pane at all, shown or hidden; nil/omitted when it has none. Present
     /// exactly when `splitRatio`/`splitFocused` can be, which is what makes those two readable without
-    /// second-guessing `split`. The sidebar icon, the dashboard's second cell and Focus Left/Right Pane all
-    /// follow this, not `split`.
+    /// second-guessing `split`. The title-bar split button, the dashboard's second cell and Focus Left/Right
+    /// Pane all follow this, not `split`.
     public let hasSplit: Bool?
     /// True only when every existing primary/split pane is currently zmx-backed; nil on older servers.
     public let backedByZmx: Bool?

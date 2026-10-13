@@ -5,11 +5,9 @@ import XCTest
 /// host-free `agtermCore` unit tests can't reach (the filtered tree data source lives in
 /// `WorkspaceSidebar.Coordinator`, the bottom-bar toggle in `WindowContentView`).
 ///
-/// This suite is also the regression coverage for the two surfaces whose own output is NOT
-/// accessibility-observable: the marked row's black-weight `square.grid.2x2` icon and the row menu's
-/// Focus/Unfocus + Add/Remove-from-Focus label flips. Neither can be asserted directly (an SF Symbol on a
-/// recycled cell is not in the AX tree, and a menu label is only observable by invoking it), so they are
-/// covered here through what they DO: which rows the tree renders.
+/// This suite is also the regression coverage for the row menu's Focus/Unfocus + Add/Remove-from-Focus label
+/// flips, whose own output is NOT accessibility-observable: a menu label is only observable by invoking it, so
+/// they are covered here through what they DO: which rows the tree renders.
 ///
 /// Accessibility-tree facts these queries rely on (shared with SidebarUITests/FlaggedViewUITests):
 /// - a session row exposes its name as a StaticText `value` under the `session-row` identifier;

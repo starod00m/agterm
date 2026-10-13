@@ -5,6 +5,7 @@ paths:
   - "agterm/Views/SidebarRenameController.swift"
   - "agtermCore/Sources/agtermCore/SidebarDrop.swift"
   - "agtermCore/Sources/agtermCore/SidebarMode.swift"
+  - "agtermCore/Sources/agtermCore/SidebarNumbering.swift"
   - "agtermCore/Sources/agtermCore/Reorder.swift"
   - "agtermUITests/SidebarUITests.swift"
   - "agtermUITests/ReorderUITests.swift"
@@ -23,6 +24,16 @@ paths:
   reads that frame. `SidebarRowIndentTests` splits by version: the tight-gap cases run on 27 and up, the
   indent and trailing-edge cases everywhere, and `testBelowTheGateFramesMatchAPlainOutline` only below the
   gate, where it is the only thing pinning earlier layouts as untouched. Do not re-gate or drop it.
+- The leading row glyph names the digit key that selects the row, so `SidebarNumbering` counts rows exactly
+  as drawn; under the flagged tree a session counts only among its workspace's flagged sessions.
+  Positions follow the order `TreeShape` carries, so a renumber always takes the rebuild branch and
+  `RowContent` holds no position.
+- The flag fill and focus brightness show only in the ordinary tree: in flagged modes every row is flagged,
+  and those modes ignore focus. `RowContent` and the cell builder read the same `SidebarNumbering`
+  predicates; a condition added to one copy only would leave the glyph stale after a flag or focus change.
+- The glyph's size follows `sidebarFontSize`. It does not show the row kind: split, remote and disconnected
+  rows draw a number like any other. A remote session shows as a `cloud` beside its host in the title bar
+  (`InterfaceElement.remoteHost`) and in the session switcher.
 
 ## Drag and row actions
 
@@ -86,14 +97,15 @@ paths:
 - Flagged mode has two layouts, chosen by the app-wide `FlaggedViewLayout` setting ([[settings]]), not per window.
   `flat` is one non-expandable outline labeled `session : workspace`.
   `tree` renders workspace rows holding only their flagged sessions, omits workspaces with none, and drops the suffix.
-  Both use base terminal/split icons, status, and badge, ignore workspace focus, disable drag reorder, and show
+  Both number their rows, keep status and badge, ignore workspace focus, disable drag reorder, and show
   the tinted non-scrolling hint `No flagged sessions. / Right-click a session → Flag.` when empty.
 - The layout is orthogonal to `SidebarMode`, never a third case: every `sidebarMode == .flagged` check in
   `agtermCore` means "the flagged set is what is visible", which holds in both layouts.
   `AppStore.rendersWorkspaceRows(flaggedLayout:)` is the one predicate for "the outline has workspace rows",
   taking the layout as a parameter because the store does not hold app-wide state.
-- `Coordinator.workspaceProjection` yields the workspace rows for the ordinary tree AND the flagged tree, so
-  `rebuildAndReload` keeps one expansion-restore path. Never add a parallel flagged-tree build.
+- `AppStore.workspaceProjection` yields the workspace rows for the ordinary tree AND the flagged tree, so
+  `rebuildAndReload` keeps one expansion-restore path and the glyph numbers exactly the rows drawn.
+  Never add a parallel flagged-tree build.
 - A flagged-tree header badge sums only its flagged children (`displayedUnseen(for:)`), in both the cell
   builder and the content-diff builder. `Workspace.unseenCount` sums every session and would report
   notifications from rows the view leaves out.
@@ -105,17 +117,6 @@ paths:
 - GUI surfaces are `flagged-view-toggle`, row Flag/Unflag, View-menu Show Flagged/Show All, Flag Session,
   Clear Flagged, palette entries, and keyless built-ins `toggleFlaggedView`/`toggleFlag`. Clear Flagged
   is not a built-in and confirms unless under XCUITest.
-- In tree mode, flagged rows swap to `terminal.fill` or `rectangle.split.2x1.fill`; flagged mode retains
-  unfilled base icons because every row is flagged. This same-size symbol swap avoids layout shift.
-  `RowContent.flagged` limits reload to the changed row.
-- A remote row (`Session.remoteHost != nil`) takes `cloud` instead, and
-  there a heavier WEIGHT means split rather than flagged: a hidden split is state nothing else reveals,
-  while the fill is tree-mode decoration the flat flagged view already passes `flagged: false` for.
-  Weight rather than `.fill` because `.fill` is what every other row icon spends on FLAGGED, so a filled
-  cloud would read as a flag; the focused-workspace icon distinguishes itself the same way.
-  The split axis is not distinguished — no cloud symbol carries both arrangements. The title bar draws
-  the same `cloud` beside the host, gated by `InterfaceElement.remoteHost`.
-  See [[control-api]].
 
 ## Workspace focus
 
@@ -161,10 +162,6 @@ paths:
   `rebuiltWorkspaceShell` lacks membership input and also serves session reopen, so it must not restore it.
   `reClosingAWorkspaceRebuiltByASessionUndoKeepsItsMembership`, focus undo/reopen tests, and legacy recent
   decode tests pin this contract.
-- Marked workspace rows use the same `square.grid.2x2` at `.black` weight, not a fill: fill identifies a
-  flagged session, weight identifies focus membership. The 16x15 black image and 15x14 regular image sit
-  in a fixed 16x16 `NSImageView`, so the 1pt size difference does not move layout. Render membership even while filtering
-  is off. `RowContent.focusMember` limits reload to that row.
 - `focus-filter-toggle` replaces the deleted single-workspace pill. It uses a filled grid when active,
   manual 0.35 opacity and disabled state when the set is empty, and accessibility value `on`/`off`.
   It remains usable while filtering is off and is gated by `InterfaceElement.focusFilter`.
@@ -191,11 +188,12 @@ paths:
 
 ## Reconciliation and expansion
 
-- `TreeShape` reflects the `workspaceProjection` rows wherever workspace rows render, and one stable
+- `TreeShape` reflects the `AppStore.workspaceProjection` rows wherever workspace rows render, and one stable
   `flaggedShapeID` group under the flat flagged list. Mode and effective-layout changes always rebuild; the
   effective layout is nil under the ordinary tree, so a setting change there rebuilds nothing.
-  Observation must read mode, both focus fields, and every session flag: membership redraws icons; enabled
-  state reshapes the tree. The layout is not observable and arrives on `.agtermAppearanceChanged`.
+  Observation must read mode, both focus fields, and every session flag: membership reloads the workspace row
+  and all its session rows; enabled state reshapes the tree.
+  The layout is not observable and arrives on `.agtermAppearanceChanged`.
 - `rebuildAndReload` records what it rendered (`lastMode`, `lastFlaggedLayout`, `lastShape`, the row-content
   snapshot) itself, not `reconcile`: the mount builds directly, and an unrecorded first build makes the next
   reconcile rebuild for a change that never happened.

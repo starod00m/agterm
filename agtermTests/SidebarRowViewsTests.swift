@@ -14,10 +14,12 @@ final class SidebarRowViewsTests: XCTestCase {
     private var scroll: NSScrollView!
     private var outline: SidebarOutlineView!
     private var coordinator: WorkspaceSidebar.Coordinator!
+    private var originalSidebarFontSize: CGFloat!
 
     override func setUp() async throws {
         try await super.setUp()
         await MainActor.run {
+            originalSidebarFontSize = GhosttyApp.shared.sidebarFontSize
             stateDir = FileManager.default.temporaryDirectory
                 .appendingPathComponent("agterm-row-views-tests-\(UUID().uuidString)", isDirectory: true)
             library = WindowLibrary(directory: stateDir)
@@ -27,6 +29,7 @@ final class SidebarRowViewsTests: XCTestCase {
 
     override func tearDown() async throws {
         await MainActor.run {
+            GhosttyApp.shared.setSidebarFontSize(Double(originalSidebarFontSize))
             window?.orderOut(nil)
             window = nil
             scroll = nil
@@ -102,38 +105,139 @@ final class SidebarRowViewsTests: XCTestCase {
         XCTAssertNil(field.toolTip, "dragging the divider wider must re-evaluate, or a stale tooltip lingers")
     }
 
-    func testARemoteSessionRowGetsItsOwnIcon() throws {
+    func testRowsShowTheirVisiblePositionGlyph() throws {
         let store = try XCTUnwrap(library.activeStore)
-        let local = try XCTUnwrap(store.activeSession)
-        let remote = try XCTUnwrap(store.addSession(toWorkspace: store.workspaces[0].id, cwd: "/a", remoteHost: "buildbox"))
+        let first = store.workspaces[0]
+        let firstSession = try XCTUnwrap(first.sessions.first)
+        let second = store.addWorkspace(name: "second")
+        let sessions = try (0..<3).map { _ in try XCTUnwrap(store.addSession(toWorkspace: second.id, cwd: "/a")) }
         buildSidebar(for: store)
 
-        let remoteIcon = try renderedIcon(forSession: remote.id)
-        let localIcon = try renderedIcon(forSession: local.id)
-
-        XCTAssertEqual(remoteIcon, coordinator.remoteSessionIcon)
-        XCTAssertNotEqual(remoteIcon, localIcon, "a teleported row must be tellable from a local one at a glance")
+        XCTAssertEqual(try renderedIcon(forRow: first.id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: second.id), coordinator.rowIcon(forPosition: 2))
+        XCTAssertEqual(try renderedIcon(forRow: firstSession.id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: sessions[0].id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: sessions[2].id), coordinator.rowIcon(forPosition: 3))
     }
 
-    func testARemoteRowStillShowsAHiddenSplit() throws {
+    func testClosingASessionRenumbersTheRowsBelowIt() throws {
         let store = try XCTUnwrap(library.activeStore)
-        let remote = try XCTUnwrap(store.addSession(toWorkspace: store.workspaces[0].id, cwd: "/a", remoteHost: "buildbox"))
-        store.toggleSplit(remote.id)
-        store.toggleSplit(remote.id)
+        let workspace = store.workspaces[0]
+        let added = try (0..<2).map { _ in try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a")) }
+        let closed = try XCTUnwrap(workspace.sessions.first)
         buildSidebar(for: store)
+        XCTAssertEqual(try renderedIcon(forRow: added[1].id), coordinator.rowIcon(forPosition: 3))
 
-        XCTAssertTrue(remote.hasSplit, "the pane is alive but hidden; the row is the only place this shows")
-        XCTAssertEqual(try renderedIcon(forSession: remote.id), coordinator.remoteSplitSessionIcon)
+        store.closeSession(closed.id)
+        coordinator.reconcile()
+
+        XCTAssertEqual(try renderedIcon(forRow: added[0].id), coordinator.rowIcon(forPosition: 1))
+        XCTAssertEqual(try renderedIcon(forRow: added[1].id), coordinator.rowIcon(forPosition: 2))
     }
 
-    func testAFlaggedRemoteRowKeepsTheUnsplitWeight() throws {
+    func testMarkingAWorkspaceBrightensItAndItsSessionsWithTheFilterOffUntilUnmarked() throws {
         let store = try XCTUnwrap(library.activeStore)
-        let remote = try XCTUnwrap(store.addSession(toWorkspace: store.workspaces[0].id, cwd: "/a", remoteHost: "buildbox"))
-        remote.flagged = true
+        let marked = store.workspaces[0]
+        let selected = try XCTUnwrap(marked.sessions.first)
+        let sibling = try XCTUnwrap(store.addSession(toWorkspace: marked.id, cwd: "/a", select: false))
+        let other = store.addWorkspace(name: "other")
+        let outside = try XCTUnwrap(store.addSession(toWorkspace: other.id, cwd: "/a", select: false))
+        store.setFlag(true, forSession: sibling.id)
+        store.selectSession(selected.id)
+        buildSidebar(for: store)
+        coordinator.syncSelection()
+
+        XCTAssertEqual(try glyphAlpha(forRow: selected.id), 0.85, accuracy: 0.001)
+        for id in [marked.id, sibling.id, other.id, outside.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
+        }
+
+        store.setFocusMembership(marked.id, member: true)
+        XCTAssertFalse(store.focusEnabled)
+        coordinator.reconcile()
+        coordinator.refreshSelectionAppearance()
+
+        for id in [marked.id, selected.id, sibling.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 1, accuracy: 0.001)
+        }
+        for id in [other.id, outside.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
+        }
+        XCTAssertEqual(try renderedIcon(forRow: sibling.id), coordinator.rowIcon(forPosition: 2, flagged: true))
+        XCTAssertEqual(try renderedIcon(forRow: selected.id), coordinator.rowIcon(forPosition: 1))
+
+        store.setFocusMembership(marked.id, member: false)
+        coordinator.reconcile()
+        coordinator.refreshSelectionAppearance()
+
+        XCTAssertEqual(try glyphAlpha(forRow: selected.id), 0.85, accuracy: 0.001)
+        for id in [marked.id, sibling.id] {
+            XCTAssertEqual(try glyphAlpha(forRow: id), 0.6, accuracy: 0.001)
+        }
+    }
+
+    func testAFlagFillsTheGlyphAndUnflaggingRestoresTheOutline() throws {
+        let store = try XCTUnwrap(library.activeStore)
+        let workspace = store.workspaces[0]
+        let session = try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a"))
         buildSidebar(for: store)
 
-        XCTAssertEqual(try renderedIcon(forSession: remote.id), coordinator.remoteSessionIcon,
-                       "on a remote row the weight carries split, so flagging must not claim it")
+        store.setFlag(true, forSession: session.id)
+        coordinator.reconcile()
+        XCTAssertEqual(try renderedIcon(forRow: session.id), coordinator.rowIcon(forPosition: 2, flagged: true))
+        XCTAssertEqual(try renderedIcon(forRow: workspace.id), coordinator.rowIcon(forPosition: 1))
+
+        store.setFlag(false, forSession: session.id)
+        coordinator.reconcile()
+        XCTAssertEqual(try renderedIcon(forRow: session.id), coordinator.rowIcon(forPosition: 2))
+    }
+
+    func testTheStubStaysDimWhenFlaggedMarkedAndSelected() throws {
+        let store = try XCTUnwrap(library.activeStore)
+        let workspace = store.workspaces[0]
+        let added = try (0..<10).map { _ in try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a", select: false)) }
+        let eleventh = try XCTUnwrap(added.last)
+        store.setFlag(true, forSession: eleventh.id)
+        store.setFocusMembership(workspace.id, member: true)
+        store.selectSession(eleventh.id)
+        buildSidebar(for: store)
+        coordinator.syncSelection()
+        coordinator.refreshSelectionAppearance()
+
+        XCTAssertEqual(try renderedIcon(forRow: eleventh.id), coordinator.rowIcon(forPosition: nil))
+        XCTAssertEqual(try glyphAlpha(forRow: eleventh.id), 0.4, accuracy: 0.001)
+    }
+
+    func testTheGlyphFrameAndNameColumnFollowTheSidebarFontSize() throws {
+        let store = try XCTUnwrap(library.activeStore)
+        let workspace = store.workspaces[0]
+        let plain = try XCTUnwrap(workspace.sessions.first)
+        let added = try (0..<10).map { _ in try XCTUnwrap(store.addSession(toWorkspace: workspace.id, cwd: "/a", select: false)) }
+        let flagged = added[0]
+        let stub = try XCTUnwrap(added.last)
+        store.setFlag(true, forSession: flagged.id)
+        buildSidebar(for: store)
+
+        var previousGlyphHeight: CGFloat = 0
+        for size in [9.0, 13, 20] {
+            GhosttyApp.shared.setSidebarFontSize(size)
+            NotificationCenter.default.post(name: .agtermAppearanceChanged, object: nil)
+
+            let side = AppSettings.sidebarRowGlyphSide(fontSize: size)
+            let cells = try [plain.id, flagged.id, stub.id].map { try renderedRowCell(forRow: $0) }
+            for cell in cells {
+                cell.layoutSubtreeIfNeeded()
+                let icon = try XCTUnwrap(cell.imageView)
+                // the symbol's alignment insets make the frame taller than the square the constraints pin
+                XCTAssertEqual(icon.alignmentRect(forFrame: icon.frame).size, NSSize(width: side, height: side), "at \(size) pt")
+            }
+            let nameX = try cells.map { try XCTUnwrap($0.textField).frame.minX }
+            XCTAssertEqual(Set(nameX).count, 1, "outline, fill and stub must leave the names on one vertical at \(size) pt")
+            XCTAssertEqual(try renderedIcon(forRow: flagged.id), coordinator.rowIcon(forPosition: 2, flagged: true))
+            let glyphHeight = try renderedIcon(forRow: plain.id).size.height
+            XCTAssertGreaterThan(glyphHeight, previousGlyphHeight, "the symbol is configured at the font size, not only framed")
+            previousGlyphHeight = glyphHeight
+        }
     }
 
     func testFlaggedRenameRestoresTheLabelAfterAnUnchangedCustomName() async throws {
@@ -293,13 +397,18 @@ final class SidebarRowViewsTests: XCTestCase {
         return try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
     }
 
-    private func renderedIcon(forSession id: UUID) throws -> NSImage? {
+    private func renderedIcon(forRow id: UUID) throws -> NSImage {
+        try XCTUnwrap(renderedRowCell(forRow: id).imageView?.image)
+    }
+
+    private func glyphAlpha(forRow id: UUID) throws -> CGFloat {
+        try XCTUnwrap(renderedRowCell(forRow: id).imageView?.contentTintColor).alphaComponent
+    }
+
+    private func renderedRowCell(forRow id: UUID) throws -> SidebarCellView {
         outline.layoutSubtreeIfNeeded()
-        let row = try XCTUnwrap((0..<outline.numberOfRows).first { index in
-            guard let node = outline.item(atRow: index) as? SidebarNode else { return false }
-            return node.kind == .session && node.id == id
-        }, "the session row should be visible in the outline")
-        let cell = try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
-        return cell.imageView?.image
+        let row = try XCTUnwrap((0..<outline.numberOfRows).first { (outline.item(atRow: $0) as? SidebarNode)?.id == id },
+                                "the row should be visible in the outline")
+        return try XCTUnwrap(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)
     }
 }

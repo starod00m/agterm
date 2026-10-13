@@ -43,6 +43,16 @@ final class SidebarFlaggedLayoutTests: XCTestCase {
                 return "\(kind):\(cell?.textField?.stringValue ?? "")"
             }
         }
+
+        var glyphs: [NSImage?] {
+            (0..<outline.numberOfRows).map { row in
+                (outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? SidebarCellView)?.imageView?.image
+            }
+        }
+
+        func glyphs(atPositions positions: [Int]) -> [NSImage?] {
+            positions.map { coordinator.rowIcon(forPosition: $0) }
+        }
     }
 
     private var stateDir: URL!
@@ -120,6 +130,21 @@ final class SidebarFlaggedLayoutTests: XCTestCase {
         model.setFlaggedViewLayout(.flat)
 
         XCTAssertEqual(sidebar.rows, ["s:a1 : Alpha", "s:c1 : Gamma"])
+    }
+
+    func testGlyphsNumberTheRowsOfTheCurrentLayout() throws {
+        let store = try seededStore()
+        store.setSidebarMode(.flagged)
+        let sidebar = mount(store)
+        XCTAssertEqual(sidebar.glyphs, sidebar.glyphs(atPositions: [1, 2]))
+
+        model.setFlaggedViewLayout(.tree)
+        XCTAssertEqual(sidebar.glyphs, sidebar.glyphs(atPositions: [1, 1, 2, 1]))
+
+        store.setFlag(false, forSession: try XCTUnwrap(store.workspaces.first?.sessions.first).id)
+        sidebar.update()
+        XCTAssertEqual(sidebar.rows, ["ws:Gamma", "s:c1"])
+        XCTAssertEqual(sidebar.glyphs, sidebar.glyphs(atPositions: [1, 1]))
     }
 
     func testLayoutChangeLeavesAnOrdinaryTreeSidebarAlone() throws {
